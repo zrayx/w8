@@ -4,6 +4,7 @@ use rzdb::{Data, Db};
 use sfml::system::Vector2;
 
 use crate::chunk::Chunk;
+use crate::image::{MultiImage, IMAGES_X};
 use crate::tile::Tile;
 /// The first bit of the index is the sign of the coordinate - both x and y
 /// idx=0 -> 0
@@ -58,6 +59,20 @@ impl Map {
         let chunk = self.get_chunk_expanded_mut(chunk_x, chunk_y);
         let (x, y) = (x % Chunk::chunksize(), y % Chunk::chunksize());
         chunk.set(x, y, tile);
+    }
+    pub fn set_multi(&mut self, x: i32, y: i32, multi_image: MultiImage) {
+        let (dx, dy) = (multi_image.size_x as i32 / 2, multi_image.size_y as i32 / 2);
+        for image_id in multi_image.image_ids {
+            let (image_x, image_y) = (image_id % IMAGES_X, image_id / IMAGES_X);
+            let (x, y) = (
+                x - dx + image_x as i32 - multi_image.min_x as i32,
+                y - dy + image_y as i32 - multi_image.min_y as i32,
+            );
+            let tile = Tile {
+                image_id: Some(image_id),
+            };
+            self.set(x, y, tile);
+        }
     }
 
     fn get_chunk_expanded_mut(&mut self, chunk_x: usize, chunk_y: usize) -> &mut Chunk {
