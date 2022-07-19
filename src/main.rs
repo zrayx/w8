@@ -5,7 +5,10 @@ use sfml::{
         Transform, Vertex, View,
     },
     system::{Clock, Vector2, Vector2f, Vector2i},
-    window::{mouse::Button, ContextSettings, Event, Key, Style, VideoMode},
+    window::{
+        mouse::{Button, Wheel},
+        ContextSettings, Event, Key, Style, VideoMode,
+    },
 };
 
 mod chunk;
@@ -101,6 +104,7 @@ fn main() {
     // map movement
     let mut dx = 0;
     let mut dy = 0;
+    let mut dz = 0;
     let mut clock_dx = Clock::start();
     let mut clock_dy = Clock::start();
 
@@ -134,6 +138,12 @@ fn main() {
                     button: Button::LEFT,
                     ..
                 } => {}
+                Event::MouseWheelScrolled { wheel, delta, x, y } => {
+                    if wheel == Wheel::Vertical {
+                        dz -= delta as i32;
+                        println!("dz: {}, delta: {}, x: {}, y: {}", dz, delta, x, y);
+                    }
+                }
                 Event::Resized { width, height } => {
                     let window_size = Vector2i::new(width as i32, height as i32);
                     let view = View::from_rect(&Rect::new(
@@ -170,7 +180,8 @@ fn main() {
 
             if Button::LEFT.is_pressed() {
                 // pick image_id from matrix
-                if mouse_pos.x < IMAGES_X as i32
+                // if mouse_pos.x < IMAGES_X as i32
+                if mouse_pos.x < 4 as i32
                     && mouse_pos.y >= matrix_offset_y
                     && mouse_pos.y < IMAGES_Y as i32 + matrix_offset_y
                 {
@@ -187,10 +198,11 @@ fn main() {
                     // place image_id on map
                     let mut pos_x = mouse_pos.x + dx;
                     let mut pos_y = mouse_pos.y + dy;
+                    let pos_z = dz;
 
                     if Key::is_pressed(Key::LALT) || Key::is_pressed(Key::RALT) {
                         // set mouse selection to image_id
-                        if let Some(old_image_id) = map.get(pos_x, pos_y).image_id {
+                        if let Some(old_image_id) = map.get(pos_x, pos_y, pos_z).image_id {
                             let old_image = if let Some(multi_idx) =
                                 MultiImage::multi_id_from_image_id(old_image_id, &multi_objects)
                             {
@@ -206,6 +218,7 @@ fn main() {
                                 map.set(
                                     pos_x,
                                     pos_y,
+                                    pos_z,
                                     Tile {
                                         image_id: Some(image_id),
                                     },
@@ -214,7 +227,7 @@ fn main() {
                             MouseObject::MultiImage(multi_image) => {
                                 let (more_x, more_y) =
                                     (multi_image.size_x as i32 - 1, multi_image.size_y as i32 - 1);
-                                map.set_multi(pos_x, pos_y, multi_image);
+                                map.set_multi(pos_x, pos_y, pos_z, multi_image);
                                 pos_x += more_x;
                                 pos_y += more_y;
                             }
@@ -237,8 +250,8 @@ fn main() {
         // map
         for pos_y in tile_min_pos.y..=tile_max_pos.y {
             for pos_x in tile_min_pos.x..=tile_max_pos.x {
-                if let Some(image_id) = map.get(pos_x + dx, pos_y + dy).image_id {
-                    push_texture_coordinates(image_id, pos_x, pos_y, 1.0, &mut buf);
+                if let Some(image_id) = map.get(pos_x, pos_y, dz).image_id {
+                    push_texture_coordinates(image_id, pos_x - dx, pos_y - dy, 1.0, &mut buf);
                     num_sprites += 1;
                 }
             }
