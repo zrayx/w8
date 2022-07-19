@@ -28,8 +28,6 @@ macro_rules! example_res {
     };
 }
 
-const SCALE: f32 = 6.0;
-
 struct Object {
     position: Vector2i,
     image_id: ImageId,
@@ -40,15 +38,15 @@ enum MouseObject {
     MultiImage(MultiImage),
 }
 
-fn grid_to_win(grid_pos: Vector2i) -> Vector2f {
+fn grid_to_win(grid_pos: Vector2i, scale: f32) -> Vector2f {
     Vector2f {
-        x: grid_pos.x as f32 * TILESIZE as f32 * SCALE,
-        y: grid_pos.y as f32 * TILESIZE as f32 * SCALE,
+        x: grid_pos.x as f32 * TILESIZE as f32 * scale,
+        y: grid_pos.y as f32 * TILESIZE as f32 * scale,
     }
 }
-fn win_to_grid(win_pos: Vector2f) -> Vector2i {
-    let x = (win_pos.x / TILESIZE as f32 / SCALE).floor() as i32;
-    let y = (win_pos.y / TILESIZE as f32 / SCALE).floor() as i32;
+fn win_to_grid(win_pos: Vector2f, scale: f32) -> Vector2i {
+    let x = (win_pos.x / TILESIZE as f32 / scale).floor() as i32;
+    let y = (win_pos.y / TILESIZE as f32 / scale).floor() as i32;
     Vector2i { x, y }
 }
 
@@ -101,6 +99,8 @@ fn main() {
     let mut dx = 0;
     let mut dy = 0;
     let mut dz = 0;
+    let mut scale = 6.0;
+
     let mut clock_dx = Clock::start();
     let mut clock_dy = Clock::start();
 
@@ -120,10 +120,13 @@ fn main() {
         message = String::new();
         let mouse_pos_window = window.mouse_position();
         // let image_index: ImageId = rng.gen_range(0..IMAGES_CNT);
-        let mouse_pos = win_to_grid(Vector2f {
-            x: mouse_pos_window.x as f32,
-            y: mouse_pos_window.y as f32,
-        });
+        let mouse_pos = win_to_grid(
+            Vector2f {
+                x: mouse_pos_window.x as f32,
+                y: mouse_pos_window.y as f32,
+            },
+            scale,
+        );
         while let Some(event) = window.poll_event() {
             match event {
                 Event::Closed
@@ -134,10 +137,14 @@ fn main() {
                     button: Button::LEFT,
                     ..
                 } => {}
+                #[allow(unused_variables)]
                 Event::MouseWheelScrolled { wheel, delta, x, y } => {
                     if wheel == Wheel::Vertical {
-                        dz -= delta as i32;
-                        println!("dz: {}, delta: {}, x: {}, y: {}", dz, delta, x, y);
+                        if Key::is_pressed(Key::LCONTROL) || Key::is_pressed(Key::RCONTROL) {
+                            scale = (scale + delta as f32).max(1.0);
+                        } else {
+                            dz -= delta as i32;
+                        }
                     }
                 }
                 Event::Resized { width, height } => {
@@ -191,22 +198,26 @@ fn main() {
                         mouse_selection = MouseObject::ImageId(image_id);
                     }
                 } else {
-                    // place image_id on map
+                    // place image_id on map or pick from map
                     let pos_x = mouse_pos.x + dx;
                     let pos_y = mouse_pos.y + dy;
                     let pos_z = dz;
 
                     if Key::is_pressed(Key::LALT) || Key::is_pressed(Key::RALT) {
-                        // set mouse selection to image_id
-                        if let Some(old_image_id) = map.get(pos_x, pos_y, pos_z).image_id {
-                            let old_image = if let Some(multi_idx) =
-                                MultiImage::multi_id_from_image_id(old_image_id, &multi_objects)
-                            {
-                                MouseObject::MultiImage(multi_objects[multi_idx].clone())
-                            } else {
-                                MouseObject::ImageId(old_image_id)
-                            };
-                            mouse_selection = old_image;
+                        // pick selected image_id from map
+                        for dz in 0..10 {
+                            let dz = -dz;
+                            if let Some(old_image_id) = map.get(pos_x, pos_y, pos_z + dz).image_id {
+                                let old_image = if let Some(multi_idx) =
+                                    MultiImage::multi_id_from_image_id(old_image_id, &multi_objects)
+                                {
+                                    MouseObject::MultiImage(multi_objects[multi_idx].clone())
+                                } else {
+                                    MouseObject::ImageId(old_image_id)
+                                };
+                                mouse_selection = old_image;
+                                break;
+                            }
                         }
                     } else {
                         match mouse_selection.clone() {
@@ -239,7 +250,7 @@ fn main() {
             x: window_size.x as f32,
             y: window_size.y as f32,
         };
-        let grid_size = win_to_grid(window_vec);
+        let grid_size = win_to_grid(window_vec, scale);
         let tile_min_pos = Vector2i { x: dx, y: dy };
         let tile_max_pos = Vector2i {
             x: dx + grid_size.x,
@@ -258,7 +269,7 @@ fn main() {
                             image_id,
                             pos_x - dx,
                             pos_y - dy,
-                            1.0,
+                            scale,
                             alpha,
                             &mut buf,
                         );
@@ -274,12 +285,12 @@ fn main() {
             let image_id = obj.image_id;
             let pos_x = obj.position.x;
             let pos_y = obj.position.y;
-            push_texture_coordinates(image_id, pos_x, pos_y, 1.0, 1.0, &mut buf);
+            push_texture_coordinates(image_id, pos_x, pos_y, scale, 1.0, &mut buf);
         }
         // mouse
         match mouse_selection.clone() {
             MouseObject::ImageId(image_id) => {
-                push_texture_coordinates(image_id, mouse_pos.x, mouse_pos.y, 1.0, 1.0, &mut buf);
+                push_texture_coordinates(image_id, mouse_pos.x, mouse_pos.y, scale, 1.0, &mut buf);
                 num_sprites += 1;
             }
             MouseObject::MultiImage(multi_image) => {
@@ -291,7 +302,7 @@ fn main() {
                         mouse_pos.y - dy + image_y as i32 - multi_image.min_y as i32,
                     );
 
-                    push_texture_coordinates(image_id, x as i32, y as i32, 1.0, 1.0, &mut buf);
+                    push_texture_coordinates(image_id, x as i32, y as i32, scale, 1.0, &mut buf);
                     num_sprites += 1;
                 }
             }
@@ -305,15 +316,19 @@ fn main() {
 
         match mouse_selection.clone() {
             MouseObject::ImageId(image_id) => {
-                message += &format!("{} ", image_id);
+                message += &format!("img:{} ", image_id);
             }
             MouseObject::MultiImage(multi_image) => {
+                message += "multi:";
                 for image_id in multi_image.image_ids.iter() {
                     message += &format!("{},", image_id);
                 }
             }
         }
-        message = format!("{} sprites\n{} fps, {}", num_sprites, fps, message);
+        message = format!(
+            "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}",
+            num_sprites, fps, scale, dz, message
+        );
         text_object.set_string(&message);
         window.draw_text(&text_object, &rs);
         window.display();
@@ -358,13 +373,13 @@ fn push_texture_coordinates(
     let tex_x = f32::from(image_id % IMAGES_X) * tilesize;
     let tex_y = f32::from(image_id / IMAGES_X) * tilesize;
     let mut tf = Transform::default();
-    let object_pos = grid_to_win(Vector2 { x: pos_x, y: pos_y });
+    let object_pos = grid_to_win(Vector2 { x: pos_x, y: pos_y }, scale);
     tf.translate(object_pos.x, object_pos.y);
     tf.scale_with_center(
-        SCALE * scale,
-        SCALE * scale,
-        0. * SCALE * tilesize / 2.0,
-        0. * SCALE * tilesize / 2.0,
+        scale,
+        scale,
+        0. * scale * tilesize / 2.0,
+        0. * scale * tilesize / 2.0,
     );
 
     let color = Color::rgba(255, 255, 255, (alpha * 255.0) as u8);
