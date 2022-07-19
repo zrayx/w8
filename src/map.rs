@@ -1,7 +1,6 @@
 use std::error::Error;
 
 use rzdb::{Data, Db};
-use sfml::system::Vector2;
 
 use crate::chunk::Chunk;
 use crate::image::{MultiImage, IMAGES_X};
@@ -156,73 +155,6 @@ impl Map {
             }
         }
         Ok(())
-    }
-
-    pub fn get_min_max(&self, tile_min_pos: &mut Vector2<i32>, tile_max_pos: &mut Vector2<i32>) {
-        for chunk_z in &self.chunks {
-            for chunk_y in chunk_z {
-                for chunk_x in chunk_y {
-                    chunk_x.get_min_max(tile_min_pos, tile_max_pos);
-                }
-            }
-        }
-    }
-    #[allow(dead_code)]
-    pub fn get_min_max_old(
-        &self,
-        tile_min_pos: &mut Vector2<i32>,
-        tile_max_pos: &mut Vector2<i32>,
-    ) {
-        let len_z = self.chunks.len();
-        if len_z > 0 {
-            // even x: positive direction
-            let max_z_chunk = u_to_i(
-                (0..len_z)
-                    .step_by(2)
-                    .filter(|&z| !self.chunks[z].is_empty())
-                    .last()
-                    .unwrap_or(0),
-            );
-            let min_z_chunk = u_to_i(
-                (1..len_z)
-                    .step_by(2)
-                    .filter(|&z| !self.chunks[z].is_empty())
-                    .last()
-                    .unwrap_or(0),
-            );
-            let y_min_max: Vec<(i32, i32)> = (0..len_z)
-                .map(|x| {
-                    let len_y = self.chunks[x].len();
-                    let max_y_chunk = u_to_i(
-                        (0..len_y)
-                            .step_by(2)
-                            .filter(|&y| !self.chunks[x][y].is_empty())
-                            .last()
-                            .unwrap_or(0),
-                    );
-                    let min_y_chunk = u_to_i(
-                        (1..len_y)
-                            .step_by(2)
-                            .filter(|&y| !self.chunks[x][y].is_empty())
-                            .last()
-                            .unwrap_or(0),
-                    );
-                    (min_y_chunk, max_y_chunk)
-                })
-                .collect();
-            let min_y_chunk = y_min_max.iter().map(|&(min, _)| min).min().unwrap();
-            let max_y_chunk = y_min_max.iter().map(|&(_, max)| max).max().unwrap();
-
-            tile_min_pos.x = min_z_chunk * Chunk::chunksize() as i32;
-            tile_min_pos.y = min_y_chunk * Chunk::chunksize() as i32;
-            tile_max_pos.x = (max_z_chunk + 1) * Chunk::chunksize() as i32 - 1;
-            tile_max_pos.y = (max_y_chunk + 1) * Chunk::chunksize() as i32 - 1;
-        } else {
-            tile_min_pos.x = 0;
-            tile_min_pos.y = 0;
-            tile_max_pos.x = 0;
-            tile_max_pos.y = 0;
-        }
     }
 }
 

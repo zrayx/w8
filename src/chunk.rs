@@ -1,7 +1,6 @@
 use std::error::Error;
 
 use rzdb::{Data, Db, Row};
-use sfml::system::Vector2;
 
 use crate::tile::Tile;
 
@@ -37,28 +36,6 @@ impl Chunk {
         while self.tiles[z][y].len() < x + 1 {
             self.tiles[z][y].push(Tile { image_id: None });
         }
-    }
-    pub fn get_min_max(&self, tile_min_pos: &mut Vector2<i32>, tile_max_pos: &mut Vector2<i32>) {
-        let mut min_x = tile_min_pos.x;
-        let mut min_y = tile_min_pos.y;
-        let mut max_x = tile_max_pos.x;
-        let mut max_y = tile_max_pos.y;
-
-        for z in 0..self.tiles.len() {
-            for y in 0..self.tiles[z].len() {
-                for x in 0..self.tiles[z][y].len() {
-                    let tile = &self.tiles[z][y][x];
-                    if tile.image_id.is_some() {
-                        min_x = min_x.min(x as i32);
-                        min_y = min_y.min(y as i32);
-                        max_x = max_x.max(x as i32);
-                        max_y = max_y.max(y as i32);
-                    }
-                }
-            }
-        }
-        *tile_min_pos = Vector2::new(min_x, min_y);
-        *tile_max_pos = Vector2::new(max_x, max_y);
     }
     pub fn store(
         &self,

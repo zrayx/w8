@@ -1,6 +1,6 @@
 pub const TILESIZE: ImageId = 16;
 pub const IMAGES_X: ImageId = 16;
-pub const IMAGES_Y: ImageId = 4;
+pub const IMAGES_Y: ImageId = 16;
 pub const IMAGES_CNT: ImageId = IMAGES_X * IMAGES_Y;
 
 pub type ImageId = u16;

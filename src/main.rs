@@ -20,7 +20,7 @@ use image::{ImageId, MultiImage, TILESIZE};
 use map::Map;
 use tile::Tile;
 
-use crate::image::{IMAGES_CNT, IMAGES_X, IMAGES_Y};
+use crate::image::{IMAGES_CNT, IMAGES_X};
 
 macro_rules! example_res {
     ($path:literal) => {
@@ -57,13 +57,9 @@ fn main() {
     let db_name = "w8";
     let db_dir = "~/.local/rzdb";
     let table_map = "map";
-    let mut tile_min_pos = Vector2i::new(0, 0);
-    let mut tile_max_pos = Vector2i::new(0, 0);
     let mut db = if let Ok(mut db) = Db::load(db_name, db_dir) {
         if let Err(e) = map.parse_table(&mut db, table_map) {
             println!("{}", e);
-        } else {
-            map.get_min_max(&mut tile_min_pos, &mut tile_max_pos);
         }
         db
     } else {
@@ -181,9 +177,9 @@ fn main() {
             if Button::LEFT.is_pressed() {
                 // pick image_id from matrix
                 // if mouse_pos.x < IMAGES_X as i32
-                if mouse_pos.x < 4 as i32
+                if mouse_pos.x < 4
                     && mouse_pos.y >= matrix_offset_y
-                    && mouse_pos.y < IMAGES_Y as i32 + matrix_offset_y
+                    && mouse_pos.y < 4 + matrix_offset_y
                 {
                     let image_id: ImageId =
                         (mouse_pos.y - matrix_offset_y) as u16 * IMAGES_X + mouse_pos.x as u16;
@@ -196,8 +192,8 @@ fn main() {
                     }
                 } else {
                     // place image_id on map
-                    let mut pos_x = mouse_pos.x + dx;
-                    let mut pos_y = mouse_pos.y + dy;
+                    let pos_x = mouse_pos.x + dx;
+                    let pos_y = mouse_pos.y + dy;
                     let pos_z = dz;
 
                     if Key::is_pressed(Key::LALT) || Key::is_pressed(Key::RALT) {
@@ -225,18 +221,9 @@ fn main() {
                                 );
                             }
                             MouseObject::MultiImage(multi_image) => {
-                                let (more_x, more_y) =
-                                    (multi_image.size_x as i32 - 1, multi_image.size_y as i32 - 1);
                                 map.set_multi(pos_x, pos_y, pos_z, multi_image);
-                                pos_x += more_x;
-                                pos_y += more_y;
                             }
                         }
-                        tile_min_pos.x = pos_x.min(tile_min_pos.x);
-                        tile_min_pos.y = pos_y.min(tile_min_pos.y);
-                        tile_max_pos.x = pos_x.max(tile_max_pos.x);
-                        tile_max_pos.y = pos_y.max(tile_max_pos.y);
-
                         save_clock.restart();
                         map_modified = true;
                     }
@@ -246,13 +233,39 @@ fn main() {
 
         let mut num_sprites = matrix.len();
 
+        // draw map
+        let window_size = window.size();
+        let window_vec = Vector2f {
+            x: window_size.x as f32,
+            y: window_size.y as f32,
+        };
+        let grid_size = win_to_grid(window_vec);
+        let tile_min_pos = Vector2i { x: dx, y: dy };
+        let tile_max_pos = Vector2i {
+            x: dx + grid_size.x,
+            y: dy + grid_size.y,
+        };
+
         // calculate object positions and texture coordinates
         // map
         for pos_y in tile_min_pos.y..=tile_max_pos.y {
             for pos_x in tile_min_pos.x..=tile_max_pos.x {
-                if let Some(image_id) = map.get(pos_x, pos_y, dz).image_id {
-                    push_texture_coordinates(image_id, pos_x - dx, pos_y - dy, 1.0, &mut buf);
-                    num_sprites += 1;
+                let mut alpha = 1.0;
+                for pos_z in 0..10 {
+                    let pos_z = -pos_z;
+                    if let Some(image_id) = map.get(pos_x, pos_y, pos_z + dz).image_id {
+                        push_texture_coordinates(
+                            image_id,
+                            pos_x - dx,
+                            pos_y - dy,
+                            1.0,
+                            alpha,
+                            &mut buf,
+                        );
+                        num_sprites += 1;
+                        break;
+                    }
+                    alpha *= 0.6;
                 }
             }
         }
@@ -261,12 +274,12 @@ fn main() {
             let image_id = obj.image_id;
             let pos_x = obj.position.x;
             let pos_y = obj.position.y;
-            push_texture_coordinates(image_id, pos_x, pos_y, 1.0, &mut buf);
+            push_texture_coordinates(image_id, pos_x, pos_y, 1.0, 1.0, &mut buf);
         }
         // mouse
         match mouse_selection.clone() {
             MouseObject::ImageId(image_id) => {
-                push_texture_coordinates(image_id, mouse_pos.x, mouse_pos.y, 1.0, &mut buf);
+                push_texture_coordinates(image_id, mouse_pos.x, mouse_pos.y, 1.0, 1.0, &mut buf);
                 num_sprites += 1;
             }
             MouseObject::MultiImage(multi_image) => {
@@ -278,7 +291,7 @@ fn main() {
                         mouse_pos.y - dy + image_y as i32 - multi_image.min_y as i32,
                     );
 
-                    push_texture_coordinates(image_id, x as i32, y as i32, 1.0, &mut buf);
+                    push_texture_coordinates(image_id, x as i32, y as i32, 1.0, 1.0, &mut buf);
                     num_sprites += 1;
                 }
             }
@@ -338,6 +351,7 @@ fn push_texture_coordinates(
     pos_x: i32,
     pos_y: i32,
     scale: f32,
+    alpha: f32,
     buf: &mut Vec<Vertex>,
 ) {
     let tilesize = TILESIZE as f32;
@@ -352,23 +366,26 @@ fn push_texture_coordinates(
         0. * SCALE * tilesize / 2.0,
         0. * SCALE * tilesize / 2.0,
     );
+
+    let color = Color::rgba(255, 255, 255, (alpha * 255.0) as u8);
+
     buf.push(Vertex {
-        color: Color::WHITE,
+        color,
         position: tf.transform_point(Vector2f::new(0., 0.)),
         tex_coords: Vector2f::new(tex_x, tex_y),
     });
     buf.push(Vertex {
-        color: Color::WHITE,
+        color,
         position: tf.transform_point(Vector2f::new(0., tilesize)),
         tex_coords: Vector2f::new(tex_x, tex_y + tilesize),
     });
     buf.push(Vertex {
-        color: Color::WHITE,
+        color,
         position: tf.transform_point(Vector2f::new(tilesize, tilesize)),
         tex_coords: Vector2f::new(tex_x + tilesize, tex_y + tilesize),
     });
     buf.push(Vertex {
-        color: Color::WHITE,
+        color,
         position: tf.transform_point(Vector2f::new(tilesize, 0.)),
         tex_coords: Vector2f::new(tex_x + tilesize, tex_y),
     });
