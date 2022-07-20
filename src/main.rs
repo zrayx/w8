@@ -27,7 +27,10 @@ macro_rules! example_res {
         concat!(env!("CARGO_MANIFEST_DIR"), "/resources/", $path)
     };
 }
-
+enum Mode {
+    Paint,
+    Erase,
+}
 struct Object {
     position: Vector2i,
     image_id: ImageId,
@@ -77,12 +80,17 @@ fn main() {
     window.set_vertical_sync_enabled(true);
     let font = Font::from_file(example_res!("Qaz/Qaz.ttf")).unwrap();
     let texture = Texture::from_file(example_res!("palette.png")).unwrap();
+
     let multi_objects = vec![
         MultiImage::new(vec![(0, 1), (0, 2), (0, 3)]),
         MultiImage::new(vec![(1, 2), (1, 3)]),
     ];
     #[allow(unused_variables)]
     let multi_ids = MultiImage::generate_multi_reverse_map(&multi_objects);
+    let eraser = 3*IMAGES_X+3;
+
+    let mut mode = Mode::Paint;
+
     let mut text_object = Text::new("", &font, 36);
     let mut message;
     text_object.set_outline_color(Color::BLACK);
@@ -99,7 +107,9 @@ fn main() {
     let mut dx = 0;
     let mut dy = 0;
     let mut dz = 0;
-    let mut scale = 6.0;
+
+    let estimated_dpi = if window.size().y > 4000 { 400 } else { 200};
+    let mut scale = estimated_dpi as f32 / 400.1 * 6.0;
 
     let mut clock_dx = Clock::start();
     let mut clock_dy = Clock::start();
@@ -133,6 +143,12 @@ fn main() {
                 | Event::KeyPressed {
                     code: Key::ESCAPE, ..
                 } => window.close(),
+                Event::KeyPressed {
+                    code: Key::X, ..
+                } | Event::KeyPressed { code: Key::DELETE, .. } => {
+                        mode = Mode::Erase;
+                        mouse_selection = MouseObject::ImageId(eraser);
+                }
                 Event::MouseButtonPressed {
                     button: Button::LEFT,
                     ..
@@ -190,6 +206,11 @@ fn main() {
                 {
                     let image_id: ImageId =
                         (mouse_pos.y - matrix_offset_y) as u16 * IMAGES_X + mouse_pos.x as u16;
+                    mode = if image_id == eraser {
+                        Mode::Erase
+                    } else {
+                        Mode::Paint
+                    };
                     if let Some(multi_idx) =
                         MultiImage::multi_id_from_image_id(image_id, &multi_objects)
                     {
@@ -219,20 +240,32 @@ fn main() {
                                 break;
                             }
                         }
+                        mode = Mode::Paint;
                     } else {
-                        match mouse_selection.clone() {
-                            MouseObject::ImageId(image_id) => {
-                                map.set(
-                                    pos_x,
-                                    pos_y,
-                                    pos_z,
-                                    Tile {
-                                        image_id: Some(image_id),
-                                    },
-                                );
-                            }
-                            MouseObject::MultiImage(multi_image) => {
-                                map.set_multi(pos_x, pos_y, pos_z, multi_image);
+                        match mode {
+                            Mode::Paint => {
+                                // place image_id on map
+                                match mouse_selection.clone() {
+                                    MouseObject::ImageId(image_id) => {
+                                        map.set(
+                                            pos_x,
+                                            pos_y,
+                                            pos_z,
+                                            Tile {
+                                                image_id: Some(image_id),
+                                            },
+                                        );
+                                    }
+                                    MouseObject::MultiImage(multi_image) => {
+                                        map.set_multi(pos_x, pos_y, pos_z, multi_image);
+                                    }
+                                }
+                                    }
+                            Mode::Erase => {
+                                // erase image_id from map
+                                map.set(pos_x, pos_y, pos_z, Tile {
+                                    image_id: None,
+                                });
                             }
                         }
                         save_clock.restart();
