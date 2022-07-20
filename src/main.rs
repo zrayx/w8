@@ -19,7 +19,7 @@ mod image;
 mod map;
 mod tile;
 
-use image::{ImageId, MultiImage, TILESIZE};
+use image::{ImageId, MultiImage, IMAGES_USED_X, IMAGES_USED_Y, TILESIZE};
 use map::Map;
 use tile::Tile;
 
@@ -105,6 +105,7 @@ fn main() {
     let multi_objects = vec![
         MultiImage::new(vec![(0, 1), (0, 2), (0, 3)]),
         MultiImage::new(vec![(1, 2), (1, 3)]),
+        MultiImage::new(vec![(0, 4), (0, 5)]),
     ];
     #[allow(unused_variables)]
     let multi_ids = MultiImage::generate_multi_reverse_map(&multi_objects);
@@ -226,9 +227,9 @@ fn main() {
             if Button::LEFT.is_pressed() {
                 // pick image_id from matrix
                 // if mouse_pos.x < IMAGES_X as i32
-                if mouse_pos.x < 4
+                if mouse_pos.x < IMAGES_USED_X as i32
                     && mouse_pos.y >= matrix_offset_y
-                    && mouse_pos.y < 4 + matrix_offset_y
+                    && mouse_pos.y < IMAGES_USED_Y as i32 + matrix_offset_y
                 {
                     let image_id: ImageId =
                         (mouse_pos.y - matrix_offset_y) as u16 * IMAGES_X + mouse_pos.x as u16;
@@ -318,22 +319,34 @@ fn main() {
         // map
         for pos_y in tile_min_pos.y..=tile_max_pos.y {
             for pos_x in tile_min_pos.x..=tile_max_pos.x {
-                let mut alpha = 1.0;
-                for pos_z in 0..10 {
-                    let pos_z = -pos_z;
-                    if let Some(image_id) = map.get(pos_x, pos_y, pos_z + dz).image_id {
-                        push_texture_coordinates(
-                            image_id,
-                            pos_x - dx,
-                            pos_y - dy,
-                            scale,
-                            alpha,
-                            &mut buf,
-                        );
-                        num_sprites += 1;
-                        break;
+                // check if tile is visible
+                let mut visible = false;
+                for iy in -1..=1 {
+                    for ix in -1..=1 {
+                        if map.get(pos_x + ix, pos_y + iy, dz + 1).image_id.is_none() {
+                            visible = true;
+                            break;
+                        }
                     }
-                    alpha *= 0.6;
+                }
+                if visible {
+                    let mut alpha = 1.0;
+                    for pos_z in 0..10 {
+                        let pos_z = -pos_z;
+                        if let Some(image_id) = map.get(pos_x, pos_y, pos_z + dz).image_id {
+                            push_texture_coordinates(
+                                image_id,
+                                pos_x - dx,
+                                pos_y - dy,
+                                scale,
+                                alpha,
+                                &mut buf,
+                            );
+                            num_sprites += 1;
+                            break;
+                        }
+                        alpha *= 0.6;
+                    }
                 }
             }
         }
