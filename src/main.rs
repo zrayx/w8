@@ -75,8 +75,8 @@ fn main() {
     );
     window.set_position(Vector2::new(0, 0));
     window.set_vertical_sync_enabled(true);
-    let font = Font::from_file(example_res!("sansation.ttf")).unwrap();
-    let texture = Texture::from_file(example_res!("w5/palette2.png")).unwrap();
+    let font = Font::from_file(example_res!("Qaz/Qaz.ttf")).unwrap();
+    let texture = Texture::from_file(example_res!("palette.png")).unwrap();
     let multi_objects = vec![
         MultiImage::new(vec![(0, 1), (0, 2), (0, 3)]),
         MultiImage::new(vec![(1, 2), (1, 3)]),
@@ -105,7 +105,7 @@ fn main() {
     let mut clock_dy = Clock::start();
 
     // matrix of objects
-    let matrix_offset_y = 2;
+    let matrix_offset_y = 3;
     for idx in 0..IMAGES_CNT {
         let x: i32 = (idx % IMAGES_X) as i32;
         let y: i32 = (idx / IMAGES_X) as i32 + matrix_offset_y;
