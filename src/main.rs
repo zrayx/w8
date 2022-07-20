@@ -1,4 +1,5 @@
-use rzdb::Db;
+use std::fmt::Write;
+
 use sfml::{
     graphics::{
         Color, Font, PrimitiveType, Rect, RenderStates, RenderTarget, RenderWindow, Text, Texture,
@@ -10,6 +11,8 @@ use sfml::{
         ContextSettings, Event, Key, Style, VideoMode,
     },
 };
+
+use rzdb::Db;
 
 mod chunk;
 mod image;
@@ -52,6 +55,24 @@ fn win_to_grid(win_pos: Vector2f, scale: f32) -> Vector2i {
     let y = (win_pos.y / TILESIZE as f32 / scale).floor() as i32;
     Vector2i { x, y }
 }
+fn vf2i(v: Vector2f) -> Vector2i {
+    Vector2i {
+        x: v.x.floor() as i32,
+        y: v.y.floor() as i32,
+    }
+}
+fn vi2f(v: Vector2i) -> Vector2f {
+    Vector2f {
+        x: v.x as f32,
+        y: v.y as f32,
+    }
+}
+fn vu2f(v: Vector2<u32>) -> Vector2f {
+    Vector2f {
+        x: v.x as f32,
+        y: v.y as f32,
+    }
+}
 
 fn main() {
     let mut map = Map::new();
@@ -87,15 +108,17 @@ fn main() {
     ];
     #[allow(unused_variables)]
     let multi_ids = MultiImage::generate_multi_reverse_map(&multi_objects);
-    let eraser = 3*IMAGES_X+3;
+    let eraser = 3 * IMAGES_X + 3;
 
     let mut mode = Mode::Paint;
 
-    let mut text_object = Text::new("", &font, 36);
-    let mut message;
+    let estimated_dpi = if window.size().y > 4000 { 400 } else { 200 };
+    let mut scale = (estimated_dpi as f32 / 400.1 * 6.0).floor();
+
+    let mut text_object = Text::new("", &font, 9 * scale as u32);
+    let mut dbg_message = String::new();
     text_object.set_outline_color(Color::BLACK);
     text_object.set_outline_thickness(1.0);
-    let mut matrix = Vec::new();
     let mut rs = RenderStates::default();
     let mut buf = Vec::new();
     let mut frames_rendered = 0;
@@ -108,46 +131,25 @@ fn main() {
     let mut dy = 0;
     let mut dz = 0;
 
-    let estimated_dpi = if window.size().y > 4000 { 400 } else { 200};
-    let mut scale = estimated_dpi as f32 / 400.1 * 6.0;
-
     let mut clock_dx = Clock::start();
     let mut clock_dy = Clock::start();
 
-    // matrix of objects
-    let matrix_offset_y = 3;
-    for idx in 0..IMAGES_CNT {
-        let x: i32 = (idx % IMAGES_X) as i32;
-        let y: i32 = (idx / IMAGES_X) as i32 + matrix_offset_y;
-        let obj = Object {
-            position: Vector2i { x, y },
-            image_id: idx,
-        };
-        matrix.push(obj);
-    }
+    let (mut matrix, mut matrix_offset_y) = make_matrix(scale);
 
     while window.is_open() {
-        message = String::new();
-        let mouse_pos_window = window.mouse_position();
-        // let image_index: ImageId = rng.gen_range(0..IMAGES_CNT);
-        let mouse_pos = win_to_grid(
-            Vector2f {
-                x: mouse_pos_window.x as f32,
-                y: mouse_pos_window.y as f32,
-            },
-            scale,
-        );
+        let mouse_pos = win_to_grid(vi2f(window.mouse_position()), scale);
         while let Some(event) = window.poll_event() {
             match event {
                 Event::Closed
                 | Event::KeyPressed {
                     code: Key::ESCAPE, ..
                 } => window.close(),
-                Event::KeyPressed {
-                    code: Key::X, ..
-                } | Event::KeyPressed { code: Key::DELETE, .. } => {
-                        mode = Mode::Erase;
-                        mouse_selection = MouseObject::ImageId(eraser);
+                Event::KeyPressed { code: Key::X, .. }
+                | Event::KeyPressed {
+                    code: Key::DELETE, ..
+                } => {
+                    mode = Mode::Erase;
+                    mouse_selection = MouseObject::ImageId(eraser);
                 }
                 Event::MouseButtonPressed {
                     button: Button::LEFT,
@@ -157,7 +159,31 @@ fn main() {
                 Event::MouseWheelScrolled { wheel, delta, x, y } => {
                     if wheel == Wheel::Vertical {
                         if Key::is_pressed(Key::LCONTROL) || Key::is_pressed(Key::RCONTROL) {
-                            scale = (scale + delta as f32).max(1.0);
+                            let device_pixels_per_tile_old = TILESIZE as f32 * scale;
+                            scale = (0.01 + scale + delta as f32).floor().max(1.0);
+                            (matrix, matrix_offset_y) = make_matrix(scale);
+
+                            // when scale is changed, we need to update the map position
+                            let device_pixels_per_tile = TILESIZE as f32 * scale;
+                            if device_pixels_per_tile != device_pixels_per_tile_old {
+                                let mouse_pos = win_to_grid(vi2f(window.mouse_position()), scale);
+                                let number_tiles_old = Vector2f {
+                                    x: window.size().x as f32 / device_pixels_per_tile_old,
+                                    y: window.size().y as f32 / device_pixels_per_tile_old,
+                                };
+                                let number_tiles = Vector2f {
+                                    x: window.size().x as f32 / device_pixels_per_tile,
+                                    y: window.size().y as f32 / device_pixels_per_tile,
+                                };
+                                let delta = number_tiles - number_tiles_old;
+                                let mouse_position_relative =
+                                    vi2f(window.mouse_position()) / vu2f(window.size());
+                                let delta_tiles_relative =
+                                    vf2i(Vector2f::new(0.5, 0.5) + delta * mouse_position_relative);
+                                let (dx_old, dy_old) = (dx, dy);
+                                dx -= delta_tiles_relative.x;
+                                dy -= delta_tiles_relative.y;
+                            }
                         } else {
                             dz -= delta as i32;
                         }
@@ -260,12 +286,10 @@ fn main() {
                                         map.set_multi(pos_x, pos_y, pos_z, multi_image);
                                     }
                                 }
-                                    }
+                            }
                             Mode::Erase => {
                                 // erase image_id from map
-                                map.set(pos_x, pos_y, pos_z, Tile {
-                                    image_id: None,
-                                });
+                                map.set(pos_x, pos_y, pos_z, Tile { image_id: None });
                             }
                         }
                         save_clock.restart();
@@ -347,20 +371,21 @@ fn main() {
         window.draw_primitives(&buf, PrimitiveType::QUADS, &rs);
         rs.set_texture(None);
 
-        match mouse_selection.clone() {
+        let selection_message = match mouse_selection.clone() {
             MouseObject::ImageId(image_id) => {
-                message += &format!("img:{} ", image_id);
+                format!("img:{} ", image_id)
             }
             MouseObject::MultiImage(multi_image) => {
-                message += "multi:";
+                let mut message = "multi:".to_string();
                 for image_id in multi_image.image_ids.iter() {
-                    message += &format!("{},", image_id);
+                    _ = write!(message, "{},", image_id);
                 }
+                message
             }
-        }
-        message = format!(
-            "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}",
-            num_sprites, fps, scale, dz, message
+        };
+        let message = format!(
+            "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}\n{}",
+            num_sprites, fps, scale, dz, selection_message, dbg_message
         );
         text_object.set_string(&message);
         window.draw_text(&text_object, &rs);
@@ -374,10 +399,10 @@ fn main() {
                 save_clock.elapsed_time().as_seconds()
             );
             if let Err(err) = map.store(&mut db, table_map) {
-                message += &format!(" {}", err);
+                _ = write!(dbg_message, " {}", err);
             }
             if let Err(err) = db.save() {
-                message += &format!(" {}", err);
+                _ = write!(dbg_message, " {}", err);
             }
             println!("{:.4} Done.", save_clock.elapsed_time().as_seconds());
             save_clock.restart();
@@ -392,6 +417,22 @@ fn main() {
             frames_rendered = 0;
         }
     }
+}
+
+fn make_matrix(scale: f32) -> (Vec<Object>, i32) {
+    // matrix of objects
+    let mut matrix = Vec::new();
+    let matrix_offset_y = 12 / (scale - 0.1).max(1.0) as i32;
+    for idx in 0..IMAGES_CNT {
+        let x: i32 = (idx % IMAGES_X) as i32;
+        let y: i32 = (idx / IMAGES_X) as i32 + matrix_offset_y;
+        let obj = Object {
+            position: Vector2i { x, y },
+            image_id: idx,
+        };
+        matrix.push(obj);
+    }
+    (matrix, matrix_offset_y)
 }
 
 fn push_texture_coordinates(
