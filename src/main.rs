@@ -126,6 +126,8 @@ fn main() {
     let mut sec_clock = Clock::start();
     let mut fps = 0;
     let mut mouse_selection = MouseObject::ImageId(0);
+    let mut middle_button_start_window_xy = None;
+    let mut middle_button_start_grid_xy = None;
 
     // map movement
     let mut dx = 0;
@@ -153,9 +155,13 @@ fn main() {
                     mouse_selection = MouseObject::ImageId(eraser);
                 }
                 Event::MouseButtonPressed {
-                    button: Button::LEFT,
+                    button: Button::MIDDLE,
                     ..
-                } => {}
+                } => {
+                    middle_button_start_window_xy = Some(window.mouse_position());
+                    let mouse_pos = win_to_grid(vi2f(window.mouse_position()), scale);
+                    middle_button_start_grid_xy = Some(Vector2i { x: dx, y: dy });
+                }
                 #[allow(unused_variables)]
                 Event::MouseWheelScrolled { wheel, delta, x, y } => {
                     if wheel == Wheel::Vertical {
@@ -296,6 +302,21 @@ fn main() {
                         save_clock.restart();
                         map_modified = true;
                     }
+                }
+            }
+            if Button::MIDDLE.is_pressed() {
+                if let (Some(start_window_xy), Some(start_grid_xy)) =
+                    (middle_button_start_window_xy, middle_button_start_grid_xy)
+                {
+                    // mouse is at 200,200
+                    // dx,dy = 3,3
+                    // mouse moves to 300,300
+                    // dx,dy = 3,3+(300-200,300-200)/tilesize =
+                    let mouse_pos_window = window.mouse_position();
+                    let window_dx = mouse_pos_window - start_window_xy;
+                    let device_pixels_per_tile = TILESIZE * (scale + 0.001) as u16;
+                    dx = start_grid_xy.x - window_dx.x / device_pixels_per_tile as i32;
+                    dy = start_grid_xy.y - window_dx.y / device_pixels_per_tile as i32;
                 }
             }
         }
