@@ -134,6 +134,8 @@ fn main() {
     let mut dy = 0;
     let mut dz = 0;
 
+    let mut fog = true;
+
     let mut clock_dx = Clock::start();
     let mut clock_dy = Clock::start();
 
@@ -154,12 +156,14 @@ fn main() {
                     mode = Mode::Erase;
                     mouse_selection = MouseObject::ImageId(eraser);
                 }
+                Event::KeyPressed { code: Key::V, .. } => {
+                    fog = !fog;
+                }
                 Event::MouseButtonPressed {
                     button: Button::MIDDLE,
                     ..
                 } => {
                     middle_button_start_window_xy = Some(window.mouse_position());
-                    let mouse_pos = win_to_grid(vi2f(window.mouse_position()), scale);
                     middle_button_start_grid_xy = Some(Vector2i { x: dx, y: dy });
                 }
                 #[allow(unused_variables)]
@@ -341,12 +345,15 @@ fn main() {
         for pos_y in tile_min_pos.y..=tile_max_pos.y {
             for pos_x in tile_min_pos.x..=tile_max_pos.x {
                 // check if tile is visible
-                let mut visible = false;
-                for iy in -1..=1 {
-                    for ix in -1..=1 {
-                        if map.get(pos_x + ix, pos_y + iy, dz + 1).image_id.is_none() {
-                            visible = true;
-                            break;
+                let mut visible = true;
+                if fog {
+                    visible = false;
+                    for iy in -1..=1 {
+                        for ix in -1..=1 {
+                            if map.get(pos_x + ix, pos_y + iy, dz + 1).image_id.is_none() {
+                                visible = true;
+                                break;
+                            }
                         }
                     }
                 }
@@ -418,8 +425,8 @@ fn main() {
             }
         };
         let message = format!(
-            "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}\n{}",
-            num_sprites, fps, scale, dz, selection_message, dbg_message
+            "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}\nfog: {}\n{}",
+            num_sprites, fps, scale, dz, selection_message, fog, dbg_message
         );
         text_object.set_string(&message);
         window.draw_text(&text_object, &rs);
@@ -456,7 +463,7 @@ fn main() {
 fn make_matrix(scale: f32) -> (Vec<Object>, i32) {
     // matrix of objects
     let mut matrix = Vec::new();
-    let matrix_offset_y = 12 / (scale - 0.1).max(1.0) as i32;
+    let matrix_offset_y = 20 / (scale - 0.1).max(1.0) as i32;
     for idx in 0..IMAGES_CNT {
         let x: i32 = (idx % IMAGES_X) as i32;
         let y: i32 = (idx / IMAGES_X) as i32 + matrix_offset_y;
