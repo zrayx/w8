@@ -3,7 +3,7 @@ use std::error::Error;
 use rzdb::{Data, Db};
 
 use crate::chunk::Chunk;
-use crate::image::{MultiImage, IMAGES_X};
+use crate::image::{MultiImage, GRASS, IMAGES_X, STONE};
 use crate::tile::Tile;
 /// The first bit of the index is the sign of the coordinate - both x and y
 /// idx=0 -> 0
@@ -31,19 +31,26 @@ fn u_to_i(idx: usize) -> i32 {
         -((idx / 2) as i32 + 1)
     }
 }
+struct Noise {
+    data: Option<Vec<f32>>,
+}
 pub struct Map {
     chunks: Vec<Vec<Vec<Chunk>>>,
+    noise: Vec<Vec<Vec<Noise>>>,
 }
 impl Map {
     pub fn new() -> Self {
-        Map { chunks: vec![] }
+        Map {
+            chunks: vec![],
+            noise: vec![],
+        }
     }
-    pub fn get(&self, x: i32, y: i32, z: i32) -> Tile {
+    pub fn get(&mut self, x: i32, y: i32, z: i32) -> Tile {
         let (x, y, z) = (i_to_u(x), i_to_u(y), i_to_u(z));
         let chunk_x = x / Chunk::chunksize() as usize;
         let chunk_y = y / Chunk::chunksize() as usize;
         let chunk_z = z / Chunk::chunksize() as usize;
-        if chunk_z < self.chunks.len()
+        let tile = if chunk_z < self.chunks.len()
             && chunk_y < self.chunks[chunk_z].len()
             && chunk_x < self.chunks[chunk_z][chunk_y].len()
         {
@@ -54,7 +61,66 @@ impl Map {
             chunk.get(x, y, z)
         } else {
             Tile { image_id: None }
+        };
+        if tile.image_id.is_none() {
+            self.get_noise(x, y, z)
+        } else {
+            tile
         }
+    }
+    fn get_noise(&mut self, x: usize, y: usize, z: usize) -> Tile {
+        let (chunk_x, chunk_y, chunk_z) = (
+            x / Chunk::chunksize() as usize,
+            y / Chunk::chunksize() as usize,
+            z / Chunk::chunksize() as usize,
+        );
+
+        while self.noise.len() <= chunk_z {
+            self.noise.push(vec![]);
+        }
+        while self.noise[chunk_z].len() <= chunk_y {
+            self.noise[chunk_z].push(vec![]);
+        }
+        while self.noise[chunk_z][chunk_y].len() <= chunk_x {
+            self.noise[chunk_z][chunk_y].push(Noise { data: None });
+        }
+        let noise = &mut self.noise[chunk_z][chunk_y][chunk_x];
+        if noise.data.is_none() {
+            let (data, min, max) = simdnoise::NoiseBuilder::fbm_3d_offset(
+                (x * Chunk::chunksize()) as f32,
+                Chunk::chunksize(),
+                (y * Chunk::chunksize()) as f32,
+                Chunk::chunksize(),
+                (z * Chunk::chunksize()) as f32,
+                Chunk::chunksize(),
+            )
+            .with_freq(0.005)
+            .with_octaves(3)
+            .generate();
+            noise.data = Some(data.iter().map(|x| (x - min) / (max - min)).collect());
+        }
+        let (nx, ny, nz) = (
+            x % Chunk::chunksize() as usize,
+            y % Chunk::chunksize() as usize,
+            z % Chunk::chunksize() as usize,
+        );
+        let idx = nx
+            + ny * Chunk::chunksize() as usize
+            + nz * Chunk::chunksize() as usize * Chunk::chunksize() as usize;
+        let value = noise.data.as_ref().unwrap()[idx];
+        let height_gradient = if z > 10 {
+            1.0
+        } else if z > 0 {
+            z as f32 / 10.0
+        } else {
+            0.0
+        };
+        let image_id = match ((value + height_gradient) * 3.0) as i32 {
+            0..=2 => Some(STONE),
+            3 => Some(GRASS),
+            _ => None,
+        };
+        Tile { image_id }
     }
     pub fn set(&mut self, x: i32, y: i32, z: i32, tile: Tile) {
         let (x, y, z) = (i_to_u(x), i_to_u(y), i_to_u(z));

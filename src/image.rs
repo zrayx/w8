@@ -6,14 +6,24 @@ pub const IMAGES_USED_Y: ImageId = 6;
 pub const IMAGES_CNT: ImageId = IMAGES_X * IMAGES_Y;
 
 pub type ImageId = u16;
-trait FromGrid {
-    fn from_grid(x: i32, y: i32) -> Self;
+macro_rules! from_grid {
+    ($x:expr, $y:expr) => {
+        $x as ImageId + $y as ImageId * IMAGES_X
+    };
+    () => {};
 }
-impl FromGrid for ImageId {
-    fn from_grid(x: i32, y: i32) -> Self {
-        (x as ImageId + y as ImageId * IMAGES_X) as ImageId
-    }
-}
+pub const STONE: ImageId = from_grid!(3, 0);
+#[allow(dead_code)]
+pub const IRONORE: ImageId = from_grid!(2, 0);
+pub const GRASS: ImageId = from_grid!(0, 0);
+#[allow(dead_code)]
+pub const DIRT: ImageId = from_grid!(3, 2);
+#[allow(dead_code)]
+pub const WATER: ImageId = from_grid!(3, 1);
+#[allow(dead_code)]
+pub const FLOWER1: ImageId = from_grid!(1, 0);
+#[allow(dead_code)]
+pub const FLOWER2: ImageId = from_grid!(1, 4);
 #[derive(Clone, Copy)]
 pub struct MultiImagePart {
     pub image_id: ImageId,

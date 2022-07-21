@@ -78,7 +78,7 @@ fn main() {
     let mut map = Map::new();
     let db_name = "w8";
     let db_dir = "~/.local/rzdb";
-    let table_map = "map";
+    let table_map = "generated_map";
     let mut db = if let Ok(mut db) = Db::load(db_name, db_dir) {
         if let Err(e) = map.parse_table(&mut db, table_map) {
             println!("{}", e);
@@ -342,6 +342,7 @@ fn main() {
 
         // calculate object positions and texture coordinates
         // map
+        let mut images_used = vec![];
         for pos_y in tile_min_pos.y..=tile_max_pos.y {
             for pos_x in tile_min_pos.x..=tile_max_pos.x {
                 // check if tile is visible
@@ -371,6 +372,10 @@ fn main() {
                                 &mut buf,
                             );
                             num_sprites += 1;
+                            while images_used.len() <= image_id as usize {
+                                images_used.push(0);
+                            }
+                            images_used[image_id as usize] += 1;
                             break;
                         }
                         alpha *= 0.6;
@@ -424,9 +429,15 @@ fn main() {
                 message
             }
         };
+        let mut image_message = "".to_string();
+        for (image_id, count) in images_used.iter().enumerate() {
+            if *count > 0 {
+                _ = write!(image_message, "{}:{},", image_id, count);
+            }
+        }
         let message = format!(
-            "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}\nfog: {}\n{}",
-            num_sprites, fps, scale, dz, selection_message, fog, dbg_message
+            "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}\nfog: {}\n{}\n{}",
+            num_sprites, fps, scale, dz, selection_message, fog, dbg_message, image_message
         );
         text_object.set_string(&message);
         window.draw_text(&text_object, &rs);
