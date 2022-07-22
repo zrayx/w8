@@ -122,7 +122,7 @@ fn main() {
     text_object.set_outline_thickness(1.0);
     let mut rs = RenderStates::default();
     let mut buf = Vec::new();
-    let mut frames_rendered = 0;
+    let mut current_frames_rendered = 0;
     let mut sec_clock = Clock::start();
     let mut fps = 0;
     let mut mouse_selection = MouseObject::ImageId(0);
@@ -171,7 +171,19 @@ fn main() {
                     if wheel == Wheel::Vertical {
                         if Key::is_pressed(Key::LCONTROL) || Key::is_pressed(Key::RCONTROL) {
                             let device_pixels_per_tile_old = TILESIZE as f32 * scale;
-                            scale = (0.01 + scale + delta as f32).floor().max(1.0);
+                            scale = if scale < 1.1 && delta < 0. {
+                                if fps > 30 {
+                                    fps = 0; // reset fps to prevent taking old value into account
+                                    current_frames_rendered = 0;
+                                    scale / 2.0
+                                } else {
+                                    scale
+                                }
+                            } else if scale < 1.1 && delta > 0. {
+                                scale * 2.0
+                            } else {
+                                (0.1 + scale + delta).floor()
+                            };
                             (matrix, matrix_offset_y) = make_matrix(scale);
 
                             // when scale is changed, we need to update the map position
@@ -318,9 +330,11 @@ fn main() {
                     // dx,dy = 3,3+(300-200,300-200)/tilesize =
                     let mouse_pos_window = window.mouse_position();
                     let window_dx = mouse_pos_window - start_window_xy;
-                    let device_pixels_per_tile = TILESIZE * (scale + 0.001) as u16;
-                    dx = start_grid_xy.x - window_dx.x / device_pixels_per_tile as i32;
-                    dy = start_grid_xy.y - window_dx.y / device_pixels_per_tile as i32;
+                    let device_pixels_per_tile = TILESIZE as f32 * (scale + 0.001);
+                    dx = (start_grid_xy.x as f32 - window_dx.x as f32 / device_pixels_per_tile)
+                        as i32;
+                    dy = (start_grid_xy.y as f32 - window_dx.y as f32 / device_pixels_per_tile)
+                        as i32;
                 }
             }
         }
@@ -466,11 +480,11 @@ fn main() {
         }
 
         // calculate fps
-        frames_rendered += 1;
+        current_frames_rendered += 1;
         if sec_clock.elapsed_time().as_milliseconds() >= 1000 {
-            fps = frames_rendered;
+            fps = current_frames_rendered;
             sec_clock.restart();
-            frames_rendered = 0;
+            current_frames_rendered = 0;
         }
     }
 }
