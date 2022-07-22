@@ -134,7 +134,7 @@ fn main() {
     let mut dy = 0;
     let mut dz = 0;
 
-    let mut fog = true;
+    let mut fog = false;
 
     let mut clock_dx = Clock::start();
     let mut clock_dy = Clock::start();
@@ -345,6 +345,8 @@ fn main() {
         let mut images_used = vec![];
         for pos_y in tile_min_pos.y..=tile_max_pos.y {
             for pos_x in tile_min_pos.x..=tile_max_pos.x {
+                // for pos_y in -5..=15 {
+                //     for pos_x in -5..=5 {
                 // check if tile is visible
                 let mut visible = true;
                 if fog {
@@ -360,9 +362,9 @@ fn main() {
                 }
                 if visible {
                     let mut alpha = 1.0;
-                    for pos_z in 0..10 {
-                        let pos_z = -pos_z;
-                        if let Some(image_id) = map.get(pos_x, pos_y, pos_z + dz).image_id {
+                    for pos_z_pos in 0..10 {
+                        let pos_z_neg = -pos_z_pos;
+                        if let Some(image_id) = map.get(pos_x, pos_y, pos_z_neg + dz).image_id {
                             push_texture_coordinates(
                                 image_id,
                                 pos_x - dx,
@@ -382,7 +384,9 @@ fn main() {
                     }
                 }
             }
+            // println!();
         }
+        // println!();
         // matrix
         for obj in &mut matrix {
             let image_id = obj.image_id;

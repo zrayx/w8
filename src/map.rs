@@ -1,3 +1,4 @@
+use std::cmp::Ordering;
 use std::error::Error;
 
 use rzdb::{Data, Db};
@@ -31,97 +32,115 @@ fn u_to_i(idx: usize) -> i32 {
         -((idx / 2) as i32 + 1)
     }
 }
+
+fn chunkify(i: i32) -> (usize, usize) {
+    let cs = Chunk::chunksize() as i32;
+    let (chunk, rest) = if i < 0 {
+        ((i - cs + 1) / cs, (i + 1) % cs + cs - 1)
+    } else {
+        (i / cs, i % cs)
+    };
+    (i_to_u(chunk), rest as usize)
+}
+
 struct Noise {
     data: Option<Vec<f32>>,
 }
 pub struct Map {
     chunks: Vec<Vec<Vec<Chunk>>>,
-    noise: Vec<Vec<Vec<Noise>>>,
+    noise: Vec<Vec<Noise>>,
+    noise_min: f32,
+    noise_max: f32,
 }
 impl Map {
     pub fn new() -> Self {
         Map {
             chunks: vec![],
             noise: vec![],
+            noise_min: -0.66, // these values have to be adjusted if new min/max values are found
+            noise_max: 0.66,  // current values found are +/-0.62
         }
     }
     pub fn get(&mut self, x: i32, y: i32, z: i32) -> Tile {
-        let (x, y, z) = (i_to_u(x), i_to_u(y), i_to_u(z));
-        let chunk_x = x / Chunk::chunksize() as usize;
-        let chunk_y = y / Chunk::chunksize() as usize;
-        let chunk_z = z / Chunk::chunksize() as usize;
+        let (encoded_x, encoded_y, encoded_z) = (i_to_u(x), i_to_u(y), i_to_u(z));
+        let chunk_x = encoded_x / Chunk::chunksize() as usize;
+        let chunk_y = encoded_y / Chunk::chunksize() as usize;
+        let chunk_z = encoded_z / Chunk::chunksize() as usize;
         let tile = if chunk_z < self.chunks.len()
             && chunk_y < self.chunks[chunk_z].len()
             && chunk_x < self.chunks[chunk_z][chunk_y].len()
         {
             let chunk = &self.chunks[chunk_z][chunk_y][chunk_x];
-            let x = x % Chunk::chunksize() as usize;
-            let y = y % Chunk::chunksize() as usize;
-            let z = z % Chunk::chunksize() as usize;
+            let x = encoded_x % Chunk::chunksize() as usize;
+            let y = encoded_y % Chunk::chunksize() as usize;
+            let z = encoded_z % Chunk::chunksize() as usize;
             chunk.get(x, y, z)
         } else {
             Tile { image_id: None }
         };
         if tile.image_id.is_none() {
-            self.get_noise(x, y, z)
+            self.get_noise(encoded_x, encoded_y, encoded_z)
         } else {
             tile
         }
     }
-    fn get_noise(&mut self, x: usize, y: usize, z: usize) -> Tile {
-        let (chunk_x, chunk_y, chunk_z) = (
-            x / Chunk::chunksize() as usize,
-            y / Chunk::chunksize() as usize,
-            z / Chunk::chunksize() as usize,
-        );
 
-        while self.noise.len() <= chunk_z {
+    // TODO: We take the old encoding and encode into the new one. Switch everything to new encoding.
+    fn get_noise(&mut self, encoded_x: usize, encoded_y: usize, encoded_z: usize) -> Tile {
+        let chunksize = Chunk::chunksize();
+        let (decoded_x, decoded_y, z_level) =
+            (u_to_i(encoded_x), u_to_i(encoded_y), u_to_i(encoded_z));
+        let ((chunk_x, rest_x), (chunk_y, rest_y)) = (chunkify(decoded_x), chunkify(decoded_y));
+
+        while self.noise.len() <= chunk_y {
             self.noise.push(vec![]);
         }
-        while self.noise[chunk_z].len() <= chunk_y {
-            self.noise[chunk_z].push(vec![]);
+        while self.noise[chunk_y].len() <= chunk_x {
+            self.noise[chunk_y].push(Noise { data: None });
         }
-        while self.noise[chunk_z][chunk_y].len() <= chunk_x {
-            self.noise[chunk_z][chunk_y].push(Noise { data: None });
-        }
-        let noise = &mut self.noise[chunk_z][chunk_y][chunk_x];
+        let noise = &mut self.noise[chunk_y][chunk_x];
         if noise.data.is_none() {
-            let (data, min, max) = simdnoise::NoiseBuilder::fbm_3d_offset(
-                (x * Chunk::chunksize()) as f32,
-                Chunk::chunksize(),
-                (y * Chunk::chunksize()) as f32,
-                Chunk::chunksize(),
-                (z * Chunk::chunksize()) as f32,
-                Chunk::chunksize(),
+            let (data, min, max) = simdnoise::NoiseBuilder::fbm_2d_offset(
+                (u_to_i(chunk_x) * chunksize as i32) as f32,
+                chunksize,
+                (u_to_i(chunk_y) * chunksize as i32) as f32,
+                chunksize,
             )
-            .with_freq(0.005)
-            .with_octaves(3)
+            .with_freq(0.04)
+            .with_octaves(5)
             .generate();
-            noise.data = Some(data.iter().map(|x| (x - min) / (max - min)).collect());
+            if min < self.noise_min {
+                self.noise_min = min;
+                println!("new noise min: {}", self.noise_min);
+            }
+            if max > self.noise_max {
+                self.noise_max = max;
+                println!("new noise max: {}", self.noise_max);
+            }
+            noise.data = Some(
+                data.iter()
+                    .map(|x| (x - self.noise_min) / (self.noise_max - self.noise_min))
+                    .collect(),
+            );
         }
-        let (nx, ny, nz) = (
-            x % Chunk::chunksize() as usize,
-            y % Chunk::chunksize() as usize,
-            z % Chunk::chunksize() as usize,
-        );
-        let idx = nx
-            + ny * Chunk::chunksize() as usize
-            + nz * Chunk::chunksize() as usize * Chunk::chunksize() as usize;
+        let idx = rest_x + rest_y * chunksize;
         let value = noise.data.as_ref().unwrap()[idx];
-        let height_gradient = if z > 10 {
+        let height_gradient = if z_level > 10 {
             1.0
-        } else if z > 0 {
-            z as f32 / 10.0
+        } else if z_level > -20 {
+            z_level as f32 / 30.0
         } else {
             0.0
         };
-        let image_id = match ((value + height_gradient) * 3.0) as i32 {
-            0..=2 => Some(STONE),
-            3 => Some(GRASS),
-            _ => None,
+        let grass_level = ((value + height_gradient) * 5.0 - 5.0) as i32;
+        let image_id = match z_level.cmp(&grass_level) {
+            Ordering::Greater => None,
+            Ordering::Less => Some(STONE),
+            Ordering::Equal => Some(GRASS),
         };
         Tile { image_id }
     }
+
     pub fn set(&mut self, x: i32, y: i32, z: i32, tile: Tile) {
         let (x, y, z) = (i_to_u(x), i_to_u(y), i_to_u(z));
         let chunk_x = x / Chunk::chunksize() as usize;
