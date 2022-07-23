@@ -453,9 +453,19 @@ fn main() {
                 _ = write!(image_message, "{}:{},", image_id, count);
             }
         }
+        let mouse_pos = win_to_grid(vi2f(window.mouse_position()), scale);
+        let mouse_message = format!("mouse:{},{}", mouse_pos.x, mouse_pos.y);
         let message = format!(
-            "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}\nfog: {}\n{}\n{}",
-            num_sprites, fps, scale, dz, selection_message, fog, dbg_message, image_message
+            "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}\nfog: {}\n{}\n{}\n{}",
+            num_sprites,
+            fps,
+            scale,
+            dz,
+            selection_message,
+            fog,
+            dbg_message,
+            image_message,
+            mouse_message
         );
         text_object.set_string(&message);
         window.draw_text(&text_object, &rs);

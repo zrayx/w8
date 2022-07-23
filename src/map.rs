@@ -4,7 +4,7 @@ use std::error::Error;
 use rzdb::{Data, Db};
 
 use crate::chunk::Chunk;
-use crate::image::{MultiImage, GRASS, IMAGES_X, STONE};
+use crate::image::{ImageId, MultiImage, GRASS, IMAGES_X, STONE, WATER};
 use crate::tile::Tile;
 /// The first bit of the index is the sign of the coordinate - both x and y
 /// idx=0 -> 0
@@ -125,18 +125,19 @@ impl Map {
         }
         let idx = rest_x + rest_y * chunksize;
         let value = noise.data.as_ref().unwrap()[idx];
-        let height_gradient = if z_level > 10 {
-            1.0
-        } else if z_level > -20 {
-            z_level as f32 / 30.0
-        } else {
-            0.0
+        let air_level = (value * 9.0 - 4.0) as i32;
+        let maybe_water = |image_id: ImageId| {
+            if air_level < 0 {
+                Some(WATER)
+            } else {
+                Some(image_id)
+            }
         };
-        let grass_level = ((value + height_gradient) * 5.0 - 5.0) as i32;
-        let image_id = match z_level.cmp(&grass_level) {
+
+        let image_id = match z_level.cmp(&air_level) {
+            Ordering::Less => maybe_water(STONE),
+            Ordering::Equal => maybe_water(GRASS),
             Ordering::Greater => None,
-            Ordering::Less => Some(STONE),
-            Ordering::Equal => Some(GRASS),
         };
         Tile { image_id }
     }
