@@ -66,7 +66,7 @@ impl Map {
         let chunk_x = encoded_x / Chunk::chunksize() as usize;
         let chunk_y = encoded_y / Chunk::chunksize() as usize;
         let chunk_z = encoded_z / Chunk::chunksize() as usize;
-        let tile = if chunk_z < self.chunks.len()
+        if chunk_z < self.chunks.len()
             && chunk_y < self.chunks[chunk_z].len()
             && chunk_x < self.chunks[chunk_z][chunk_y].len()
         {
@@ -74,14 +74,13 @@ impl Map {
             let x = encoded_x % Chunk::chunksize() as usize;
             let y = encoded_y % Chunk::chunksize() as usize;
             let z = encoded_z % Chunk::chunksize() as usize;
-            chunk.get(x, y, z)
+            if let Some(tile) = chunk.get(x, y, z) {
+                tile
+            } else {
+                self.get_noise(encoded_x, encoded_y, encoded_z)
+            }
         } else {
-            Tile { image_id: None }
-        };
-        if tile.image_id.is_none() {
             self.get_noise(encoded_x, encoded_y, encoded_z)
-        } else {
-            tile
         }
     }
 
