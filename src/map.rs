@@ -4,7 +4,7 @@ use std::error::Error;
 use rzdb::{Data, Db};
 
 use crate::chunk::Chunk;
-use crate::image::{ImageId, MultiImage, GRASS, IMAGES_X, STONE, WATER};
+use crate::image::{ImageId, MultiImage, DIRT, GRASS, IMAGES_X, STONE, WATER};
 use crate::tile::Tile;
 /// The first bit of the index is the sign of the coordinate - both x and y
 /// idx=0 -> 0
@@ -48,7 +48,7 @@ struct Noise {
 }
 pub struct Map {
     chunks: Vec<Vec<Vec<Chunk>>>,
-    noise: Vec<Vec<Noise>>,
+    noise_height: Vec<Vec<Noise>>,
     noise_min: f32,
     noise_max: f32,
 }
@@ -56,7 +56,7 @@ impl Map {
     pub fn new() -> Self {
         Map {
             chunks: vec![],
-            noise: vec![],
+            noise_height: vec![],
             noise_min: -0.66, // these values have to be adjusted if new min/max values are found
             noise_max: 0.66,  // current values found are +/-0.62
         }
@@ -91,13 +91,13 @@ impl Map {
             (u_to_i(encoded_x), u_to_i(encoded_y), u_to_i(encoded_z));
         let ((chunk_x, rest_x), (chunk_y, rest_y)) = (chunkify(decoded_x), chunkify(decoded_y));
 
-        while self.noise.len() <= chunk_y {
-            self.noise.push(vec![]);
+        while self.noise_height.len() <= chunk_y {
+            self.noise_height.push(vec![]);
         }
-        while self.noise[chunk_y].len() <= chunk_x {
-            self.noise[chunk_y].push(Noise { data: None });
+        while self.noise_height[chunk_y].len() <= chunk_x {
+            self.noise_height[chunk_y].push(Noise { data: None });
         }
-        let noise = &mut self.noise[chunk_y][chunk_x];
+        let noise = &mut self.noise_height[chunk_y][chunk_x];
         if noise.data.is_none() {
             let (data, min, max) = simdnoise::NoiseBuilder::fbm_2d_offset(
                 (u_to_i(chunk_x) * chunksize as i32) as f32,
@@ -134,7 +134,13 @@ impl Map {
         };
 
         let image_id = match z_level.cmp(&air_level) {
-            Ordering::Less => maybe_water(STONE),
+            Ordering::Less => {
+                if z_level == air_level - 1 {
+                    maybe_water(DIRT)
+                } else {
+                    maybe_water(STONE)
+                }
+            }
             Ordering::Equal => maybe_water(GRASS),
             Ordering::Greater => None,
         };

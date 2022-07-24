@@ -365,11 +365,14 @@ fn main() {
                 let mut visible = true;
                 if fog {
                     visible = false;
-                    for iy in -1..=1 {
-                        for ix in -1..=1 {
-                            if map.get(pos_x + ix, pos_y + iy, dz + 1).image_id.is_none() {
-                                visible = true;
-                                break;
+
+                    for iz in -1..=1 {
+                        for iy in -1..=1 {
+                            for ix in -1..=1 {
+                                if map.get(pos_x + ix, pos_y + iy, dz + iz).image_id.is_none() {
+                                    visible = true;
+                                    break;
+                                }
                             }
                         }
                     }

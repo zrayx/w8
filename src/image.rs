@@ -1,7 +1,7 @@
 pub const TILESIZE: ImageId = 16;
 pub const IMAGES_X: ImageId = 16;
 pub const IMAGES_Y: ImageId = 16;
-pub const IMAGES_USED_X: ImageId = 4;
+pub const IMAGES_USED_X: ImageId = 6;
 pub const IMAGES_USED_Y: ImageId = 6;
 pub const IMAGES_CNT: ImageId = IMAGES_X * IMAGES_Y;
 
@@ -14,11 +14,13 @@ macro_rules! from_grid {
 }
 pub const STONE: ImageId = from_grid!(3, 0);
 #[allow(dead_code)]
-pub const IRONORE: ImageId = from_grid!(2, 0);
+pub const IRON: ImageId = from_grid!(2, 0);
+#[allow(dead_code)]
+pub const COPPER: ImageId = from_grid!(5, 1);
+#[allow(dead_code)]
+pub const GOLD: ImageId = from_grid!(5, 0);
 pub const GRASS: ImageId = from_grid!(0, 0);
-#[allow(dead_code)]
 pub const DIRT: ImageId = from_grid!(3, 2);
-#[allow(dead_code)]
 pub const WATER: ImageId = from_grid!(3, 1);
 #[allow(dead_code)]
 pub const FLOWER1: ImageId = from_grid!(1, 0);
