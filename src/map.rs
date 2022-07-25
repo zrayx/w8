@@ -1,15 +1,10 @@
-use std::cmp::Ordering;
 use std::error::Error;
 
 use rzdb::{Data, Db};
 
 use crate::chunk::Chunk;
-use crate::image::{ImageId, MultiImage, DIRT, GRASS, IMAGES_X, STONE, WATER};
+use crate::image::{MultiImage, COPPER, DIRT, GOLD, GRASS, IMAGES_X, IRON, STONE, WATER};
 use crate::tile::Tile;
-
-const NOISE_HEIGHT: usize = 0;
-#[allow(dead_code)]
-const NOISE_SOIL_THICKNESS: usize = 1;
 
 /// The first bit of the index is the sign of the coordinate - both x and y
 /// idx=0 -> 0
@@ -48,22 +43,112 @@ fn chunkify(i: i32) -> (usize, usize) {
     (i_to_u(chunk), rest as usize)
 }
 
-struct Noise {
-    data: Option<Vec<f32>>, // "2d" array of chunksize*chunksize values
+struct NoiseMeta {
+    id: usize,
+    frequency: f32,
+    octaves: u8, // changes noise_min/noise_max
+    lacunarity: f32,
+    noise_min: f32,
+    noise_max: f32,
+    min_value: i16, // quality of values near min_value and max_value depend on the accuracy
+    max_value: i16, // noise_min and noise_max
+    seed: i32,
 }
+
+const NOISE_2_OCTAVES_MIN: f32 = -0.0911;
+const NOISE_2_OCTAVES_MAX: f32 = 0.0911;
+const NOISE_5_OCTAVES_MIN: f32 = -0.66;
+const NOISE_5_OCTAVES_MAX: f32 = 0.66;
+
+const NOISE_TERRAIN_HEIGHT: NoiseMeta = NoiseMeta {
+    id: 0,
+    frequency: 0.04,
+    octaves: 5,
+    lacunarity: 0.4,
+    noise_min: NOISE_5_OCTAVES_MIN,
+    noise_max: NOISE_5_OCTAVES_MAX,
+    min_value: -8,
+    max_value: 10,
+    seed: 1,
+};
+const NOISE_SOIL_THICKNESS: NoiseMeta = NoiseMeta {
+    id: 1,
+    frequency: 0.02,
+    octaves: 2,
+    lacunarity: 0.4,
+    noise_min: NOISE_2_OCTAVES_MIN,
+    noise_max: NOISE_2_OCTAVES_MAX,
+    min_value: 0,
+    max_value: 5,
+    seed: 0,
+};
+const NOISE_2D_COUNT: usize = 2;
+
+const NOISE_IRON_ORE: NoiseMeta = NoiseMeta {
+    id: 0,
+    frequency: 0.06,
+    octaves: 2,
+    lacunarity: 0.4,
+    noise_min: NOISE_2_OCTAVES_MIN,
+    noise_max: NOISE_2_OCTAVES_MAX,
+    min_value: -3,
+    max_value: 20,
+    seed: 3,
+};
+
+const NOISE_COPPER_ORE: NoiseMeta = NoiseMeta {
+    id: 1,
+    frequency: 0.06,
+    octaves: 2,
+    lacunarity: 0.4,
+    noise_min: NOISE_2_OCTAVES_MIN,
+    noise_max: NOISE_2_OCTAVES_MAX,
+    min_value: -3,
+    max_value: 20,
+    seed: 4,
+};
+
+const NOISE_GOLD_ORE: NoiseMeta = NoiseMeta {
+    id: 2,
+    frequency: 0.16,
+    octaves: 2,
+    lacunarity: 0.4,
+    noise_min: NOISE_2_OCTAVES_MIN,
+    noise_max: NOISE_2_OCTAVES_MAX,
+    min_value: -2,
+    max_value: 100,
+    seed: 5,
+};
+
+const NOISE_3D_COUNT: usize = 3;
+
+struct Noise {
+    data: Option<Vec<i16>>, // "2d" array of chunksize*chunksize values
+}
+
 pub struct Map {
     chunks: Vec<Vec<Vec<Chunk>>>,
-    noise: Vec<Vec<Vec<Noise>>>, // array of array[][] of chunks
+    noise_2d: Vec<Vec<Vec<Noise>>>, // array of array[][] of chunks
+    noise_3d: Vec<Vec<Vec<Vec<Noise>>>>, // array of array[][][] of chunks
     noise_min: f32,
     noise_max: f32,
 }
 impl Map {
     pub fn new() -> Self {
+        let mut noise_2d = vec![];
+        for _ in 0..NOISE_2D_COUNT {
+            noise_2d.push(vec![]);
+        }
+        let mut noise_3d = vec![];
+        for _ in 0..NOISE_3D_COUNT {
+            noise_3d.push(vec![]);
+        }
         Map {
             chunks: vec![],
-            noise: vec![vec![], vec![]],
-            noise_min: -0.66, // these values have to be adjusted if new min/max values are found
-            noise_max: 0.66,  // current values found are +/-0.62
+            noise_2d,
+            noise_3d,
+            noise_min: NOISE_2_OCTAVES_MIN,
+            noise_max: NOISE_2_OCTAVES_MAX,
         }
     }
     pub fn get(&mut self, x: i32, y: i32, z: i32) -> Tile {
@@ -94,60 +179,152 @@ impl Map {
         let chunksize = Chunk::chunksize();
         let (decoded_x, decoded_y, z_level) =
             (u_to_i(encoded_x), u_to_i(encoded_y), u_to_i(encoded_z));
-        let ((chunk_x, rest_x), (chunk_y, rest_y)) = (chunkify(decoded_x), chunkify(decoded_y));
+        let (chunk_x, rest_x) = chunkify(decoded_x);
+        let (chunk_y, rest_y) = chunkify(decoded_y);
+        let (chunk_z, rest_z) = chunkify(z_level);
 
-        while self.noise[NOISE_HEIGHT].len() <= chunk_y {
-            self.noise[NOISE_HEIGHT].push(vec![]);
-        }
-        while self.noise[NOISE_HEIGHT][chunk_y].len() <= chunk_x {
-            self.noise[NOISE_HEIGHT][chunk_y].push(Noise { data: None });
-        }
-        let noise = &mut self.noise[NOISE_HEIGHT][chunk_y][chunk_x];
-        if noise.data.is_none() {
-            let (data, min, max) = simdnoise::NoiseBuilder::fbm_2d_offset(
-                (u_to_i(chunk_x) * chunksize as i32) as f32,
-                chunksize,
-                (u_to_i(chunk_y) * chunksize as i32) as f32,
-                chunksize,
-            )
-            .with_freq(0.04)
-            .with_octaves(5)
-            .generate();
-            if min < self.noise_min {
-                self.noise_min = min;
-                println!("new noise min: {}", self.noise_min);
+        for id in 0..NOISE_2D_COUNT {
+            let noise_struct = match id {
+                0 => &NOISE_TERRAIN_HEIGHT,
+                1 => &NOISE_SOIL_THICKNESS,
+                _ => unreachable!(),
+            };
+            while self.noise_2d[id].len() <= chunk_y {
+                self.noise_2d[id].push(vec![]);
             }
-            if max > self.noise_max {
-                self.noise_max = max;
-                println!("new noise max: {}", self.noise_max);
+            while self.noise_2d[id][chunk_y].len() <= chunk_x {
+                self.noise_2d[id][chunk_y].push(Noise { data: None });
             }
-            noise.data = Some(
-                data.iter()
-                    .map(|x| (x - self.noise_min) / (self.noise_max - self.noise_min))
-                    .collect(),
-            );
+            let noise = &mut self.noise_2d[id][chunk_y][chunk_x];
+            if noise.data.is_none() {
+                let (data, min, max) = simdnoise::NoiseBuilder::fbm_2d_offset(
+                    (u_to_i(chunk_x) * chunksize as i32) as f32,
+                    chunksize,
+                    (u_to_i(chunk_y) * chunksize as i32) as f32,
+                    chunksize,
+                )
+                .with_freq(noise_struct.frequency)
+                .with_octaves(noise_struct.octaves)
+                .with_lacunarity(noise_struct.lacunarity)
+                .with_seed(noise_struct.seed)
+                .generate();
+                if min < noise_struct.noise_min && id > 0 && min < self.noise_min {
+                    self.noise_min = self.noise_min.min(min);
+                    println!("new noise_2d[{}] min: {}", id, min);
+                }
+                if max > noise_struct.noise_max && id > 0 && max > self.noise_max {
+                    self.noise_max = self.noise_max.max(max);
+                    println!("new noise_2d[{}] max: {}", id, max);
+                }
+                noise.data = Some(
+                    data.iter()
+                        .map(|x| {
+                            ((x - noise_struct.noise_min)
+                                / (noise_struct.noise_max - noise_struct.noise_min)
+                                * (noise_struct.max_value - noise_struct.min_value) as f32
+                                + noise_struct.min_value as f32) as i16
+                        })
+                        .collect(),
+                );
+            }
         }
-        let idx = rest_x + rest_y * chunksize;
-        let value = noise.data.as_ref().unwrap()[idx];
-        let air_level = (value * 9.0 - 4.0) as i32;
-        let maybe_water = |image_id: ImageId| {
-            if air_level < 0 {
-                Some(WATER)
-            } else {
-                Some(image_id)
+
+        for id in 0..NOISE_3D_COUNT {
+            let noise_struct = match id {
+                0 => &NOISE_IRON_ORE,
+                1 => &NOISE_COPPER_ORE,
+                2 => &NOISE_GOLD_ORE,
+                _ => unreachable!(),
+            };
+            while self.noise_3d[id].len() <= chunk_z {
+                self.noise_3d[id].push(vec![]);
+            }
+            while self.noise_3d[id][chunk_z].len() <= chunk_y {
+                self.noise_3d[id][chunk_z].push(vec![]);
+            }
+            while self.noise_3d[id][chunk_z][chunk_y].len() <= chunk_x {
+                self.noise_3d[id][chunk_z][chunk_y].push(Noise { data: None });
+            }
+            let noise = &mut self.noise_3d[id][chunk_z][chunk_y][chunk_x];
+            if noise.data.is_none() {
+                let (data, min, max) = simdnoise::NoiseBuilder::fbm_3d_offset(
+                    (u_to_i(chunk_x) * chunksize as i32) as f32,
+                    chunksize,
+                    (u_to_i(chunk_y) * chunksize as i32) as f32,
+                    chunksize,
+                    (u_to_i(chunk_z) * chunksize as i32) as f32,
+                    chunksize,
+                )
+                .with_freq(noise_struct.frequency)
+                .with_octaves(noise_struct.octaves)
+                .with_lacunarity(noise_struct.lacunarity)
+                .with_seed(noise_struct.seed)
+                .generate();
+                if min < noise_struct.noise_min && id > 0 && min < self.noise_min {
+                    self.noise_min = self.noise_min.min(min);
+                    println!("new noise_3d[{}] min: {}", id, min);
+                }
+                if max > noise_struct.noise_max && id > 0 && max > self.noise_max {
+                    self.noise_max = self.noise_max.max(max);
+                    println!("new noise_3d[{}] max: {}", id, max);
+                }
+                noise.data = Some(
+                    data.iter()
+                        .map(|x| {
+                            ((x - noise_struct.noise_min)
+                                / (noise_struct.noise_max - noise_struct.noise_min)
+                                * (noise_struct.max_value - noise_struct.min_value) as f32
+                                + noise_struct.min_value as f32) as i16
+                        })
+                        .collect(),
+                );
+            }
+        }
+
+        let idx_2d = rest_x + rest_y * chunksize;
+
+        let terrain_height = &self.noise_2d[NOISE_TERRAIN_HEIGHT.id][chunk_y][chunk_x];
+        let terrain_height = terrain_height.data.as_ref().unwrap()[idx_2d];
+
+        let soil_thickness = &self.noise_2d[NOISE_SOIL_THICKNESS.id][chunk_y][chunk_x];
+        let soil_thickness = soil_thickness.data.as_ref().unwrap()[idx_2d];
+
+        let idx_3d = rest_x + rest_y * chunksize + rest_z * chunksize * chunksize;
+        let iron_ore_depth = &self.noise_3d[NOISE_IRON_ORE.id][chunk_z][chunk_y][chunk_x];
+        let iron_ore_depth = iron_ore_depth.data.as_ref().unwrap()[idx_3d];
+        let copper_ore_depth = &self.noise_3d[NOISE_COPPER_ORE.id][chunk_z][chunk_y][chunk_x];
+        let copper_ore_depth = copper_ore_depth.data.as_ref().unwrap()[idx_3d];
+        let gold_ore_depth = &self.noise_3d[NOISE_GOLD_ORE.id][chunk_z][chunk_y][chunk_x];
+        let gold_ore_depth = gold_ore_depth.data.as_ref().unwrap()[idx_3d];
+
+        let mut ore_kind = STONE;
+        let mut chooser = |value, ore_type| {
+            if value < 0 {
+                ore_kind = ore_type;
             }
         };
+        // latter overwrites former
+        chooser(copper_ore_depth, COPPER);
+        chooser(gold_ore_depth, GOLD);
+        chooser(iron_ore_depth, IRON);
 
-        let image_id = match z_level.cmp(&air_level) {
-            Ordering::Less => {
-                if z_level == air_level - 1 {
-                    maybe_water(DIRT)
-                } else {
-                    maybe_water(STONE)
-                }
+        let distance = z_level as i16 - terrain_height;
+        let image_id = if distance > 0 {
+            if terrain_height <= 0 && z_level <= 0 {
+                Some(WATER)
+            } else {
+                None
             }
-            Ordering::Equal => maybe_water(GRASS),
-            Ordering::Greater => None,
+        } else if distance == 0 {
+            if terrain_height >= 0 {
+                Some(GRASS)
+            } else {
+                Some(DIRT)
+            }
+        } else if distance < 0 && distance >= -soil_thickness {
+            Some(DIRT)
+        } else {
+            Some(ore_kind)
         };
         Tile { image_id }
     }

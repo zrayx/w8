@@ -113,10 +113,11 @@ fn main() {
 
     let mut mode = Mode::Paint;
 
-    let estimated_dpi = if window.size().y > 4000 { 400 } else { 200 };
+    let estimated_dpi = if window.size().y > 4000 { 400 } else { 300 };
     let mut scale = (estimated_dpi as f32 / 400.1 * 4.0).floor();
 
     let mut text_object = Text::new("", &font, 9 * scale as u32);
+    scale = 0.5;
     let mut dbg_message = String::new();
     text_object.set_outline_color(Color::BLACK);
     text_object.set_outline_thickness(1.0);
@@ -397,7 +398,7 @@ fn main() {
                             images_used[image_id as usize] += 1;
                             break;
                         }
-                        alpha *= 0.6;
+                        alpha *= 0.8;
                     }
                 }
             }
@@ -457,7 +458,7 @@ fn main() {
             }
         }
         let mouse_pos = win_to_grid(vi2f(window.mouse_position()), scale);
-        let mouse_message = format!("mouse:{},{}", mouse_pos.x, mouse_pos.y);
+        let mouse_message = format!("mouse:{},{}", mouse_pos.x + dx, mouse_pos.y + dy);
         let message = format!(
             "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}\nfog: {}\n{}\n{}\n{}",
             num_sprites,

@@ -13,12 +13,9 @@ macro_rules! from_grid {
     () => {};
 }
 pub const STONE: ImageId = from_grid!(3, 0);
-#[allow(dead_code)]
 pub const IRON: ImageId = from_grid!(2, 0);
-#[allow(dead_code)]
-pub const COPPER: ImageId = from_grid!(5, 1);
-#[allow(dead_code)]
-pub const GOLD: ImageId = from_grid!(5, 0);
+pub const COPPER: ImageId = from_grid!(4, 1);
+pub const GOLD: ImageId = from_grid!(4, 0);
 pub const GRASS: ImageId = from_grid!(0, 0);
 pub const DIRT: ImageId = from_grid!(3, 2);
 pub const WATER: ImageId = from_grid!(3, 1);

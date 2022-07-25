@@ -12,7 +12,7 @@ pub struct Chunk {
 }
 impl Chunk {
     pub fn chunksize() -> usize {
-        32
+        16
     }
     pub fn new() -> Self {
         Chunk { tiles: vec![] }
