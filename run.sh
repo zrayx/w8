@@ -5,7 +5,7 @@ clear
 cargo fmt
 cargo clippy &&
 #RUST_BACKTRACE=1 cargo run --example data_types
-RUST_BACKTRACE=1 cargo build
+RUST_BACKTRACE=1 cargo build --release
 echo --------------------------------------------------------------------------------
 inotifywait -q -e close_write src Cargo.toml run.sh
 

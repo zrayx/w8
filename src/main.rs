@@ -114,7 +114,7 @@ fn main() {
     let mut mode = Mode::Paint;
 
     let estimated_dpi = if window.size().y > 4000 { 400 } else { 200 };
-    let mut scale = (estimated_dpi as f32 / 400.1 * 6.0).floor();
+    let mut scale = (estimated_dpi as f32 / 400.1 * 4.0).floor();
 
     let mut text_object = Text::new("", &font, 9 * scale as u32);
     let mut dbg_message = String::new();
@@ -130,9 +130,9 @@ fn main() {
     let mut middle_button_start_grid_xy = None;
 
     // map movement
-    let mut dx = 0;
+    let mut dx = -80;
     let mut dy = 0;
-    let mut dz = 0;
+    let mut dz = 1;
 
     let mut fog = false;
 
@@ -505,7 +505,7 @@ fn main() {
 fn make_matrix(scale: f32) -> (Vec<Object>, i32) {
     // matrix of objects
     let mut matrix = Vec::new();
-    let matrix_offset_y = 20 / (scale - 0.1).max(1.0) as i32;
+    let matrix_offset_y = 40 / (scale - 0.1).max(1.0) as i32;
     for idx in 0..IMAGES_CNT {
         let x: i32 = (idx % IMAGES_X) as i32;
         let y: i32 = (idx / IMAGES_X) as i32 + matrix_offset_y;

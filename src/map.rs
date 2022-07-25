@@ -6,6 +6,11 @@ use rzdb::{Data, Db};
 use crate::chunk::Chunk;
 use crate::image::{ImageId, MultiImage, DIRT, GRASS, IMAGES_X, STONE, WATER};
 use crate::tile::Tile;
+
+const NOISE_HEIGHT: usize = 0;
+#[allow(dead_code)]
+const NOISE_SOIL_THICKNESS: usize = 1;
+
 /// The first bit of the index is the sign of the coordinate - both x and y
 /// idx=0 -> 0
 /// idx=1 -> -1
@@ -44,11 +49,11 @@ fn chunkify(i: i32) -> (usize, usize) {
 }
 
 struct Noise {
-    data: Option<Vec<f32>>,
+    data: Option<Vec<f32>>, // "2d" array of chunksize*chunksize values
 }
 pub struct Map {
     chunks: Vec<Vec<Vec<Chunk>>>,
-    noise_height: Vec<Vec<Noise>>,
+    noise: Vec<Vec<Vec<Noise>>>, // array of array[][] of chunks
     noise_min: f32,
     noise_max: f32,
 }
@@ -56,7 +61,7 @@ impl Map {
     pub fn new() -> Self {
         Map {
             chunks: vec![],
-            noise_height: vec![],
+            noise: vec![vec![], vec![]],
             noise_min: -0.66, // these values have to be adjusted if new min/max values are found
             noise_max: 0.66,  // current values found are +/-0.62
         }
@@ -77,27 +82,27 @@ impl Map {
             if let Some(tile) = chunk.get(x, y, z) {
                 tile
             } else {
-                self.get_noise(encoded_x, encoded_y, encoded_z)
+                self.get_from_noise(encoded_x, encoded_y, encoded_z)
             }
         } else {
-            self.get_noise(encoded_x, encoded_y, encoded_z)
+            self.get_from_noise(encoded_x, encoded_y, encoded_z)
         }
     }
 
     // TODO: We take the old encoding and encode into the new one. Switch everything to new encoding.
-    fn get_noise(&mut self, encoded_x: usize, encoded_y: usize, encoded_z: usize) -> Tile {
+    fn get_from_noise(&mut self, encoded_x: usize, encoded_y: usize, encoded_z: usize) -> Tile {
         let chunksize = Chunk::chunksize();
         let (decoded_x, decoded_y, z_level) =
             (u_to_i(encoded_x), u_to_i(encoded_y), u_to_i(encoded_z));
         let ((chunk_x, rest_x), (chunk_y, rest_y)) = (chunkify(decoded_x), chunkify(decoded_y));
 
-        while self.noise_height.len() <= chunk_y {
-            self.noise_height.push(vec![]);
+        while self.noise[NOISE_HEIGHT].len() <= chunk_y {
+            self.noise[NOISE_HEIGHT].push(vec![]);
         }
-        while self.noise_height[chunk_y].len() <= chunk_x {
-            self.noise_height[chunk_y].push(Noise { data: None });
+        while self.noise[NOISE_HEIGHT][chunk_y].len() <= chunk_x {
+            self.noise[NOISE_HEIGHT][chunk_y].push(Noise { data: None });
         }
-        let noise = &mut self.noise_height[chunk_y][chunk_x];
+        let noise = &mut self.noise[NOISE_HEIGHT][chunk_y][chunk_x];
         if noise.data.is_none() {
             let (data, min, max) = simdnoise::NoiseBuilder::fbm_2d_offset(
                 (u_to_i(chunk_x) * chunksize as i32) as f32,
