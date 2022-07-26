@@ -68,7 +68,7 @@ const NOISE_TERRAIN_HEIGHT: NoiseMeta = NoiseMeta {
     noise_min: NOISE_5_OCTAVES_MIN,
     noise_max: NOISE_5_OCTAVES_MAX,
     min_value: -8,
-    max_value: 10,
+    max_value: 16,
     seed: 1,
 };
 const NOISE_SOIL_THICKNESS: NoiseMeta = NoiseMeta {
@@ -91,7 +91,7 @@ const NOISE_IRON_ORE: NoiseMeta = NoiseMeta {
     lacunarity: 0.4,
     noise_min: NOISE_2_OCTAVES_MIN,
     noise_max: NOISE_2_OCTAVES_MAX,
-    min_value: -3,
+    min_value: -6,
     max_value: 20,
     seed: 3,
 };
@@ -103,7 +103,7 @@ const NOISE_COPPER_ORE: NoiseMeta = NoiseMeta {
     lacunarity: 0.4,
     noise_min: NOISE_2_OCTAVES_MIN,
     noise_max: NOISE_2_OCTAVES_MAX,
-    min_value: -3,
+    min_value: -6,
     max_value: 20,
     seed: 4,
 };
@@ -115,8 +115,8 @@ const NOISE_GOLD_ORE: NoiseMeta = NoiseMeta {
     lacunarity: 0.4,
     noise_min: NOISE_2_OCTAVES_MIN,
     noise_max: NOISE_2_OCTAVES_MAX,
-    min_value: -2,
-    max_value: 100,
+    min_value: -6,
+    max_value: 50,
     seed: 5,
 };
 
@@ -132,6 +132,9 @@ pub struct Map {
     noise_3d: Vec<Vec<Vec<Vec<Noise>>>>, // array of array[][][] of chunks
     noise_min: f32,
     noise_max: f32,
+    pub iron_ore_count: usize,
+    pub copper_ore_count: usize,
+    pub gold_ore_count: usize,
 }
 impl Map {
     pub fn new() -> Self {
@@ -149,6 +152,9 @@ impl Map {
             noise_3d,
             noise_min: NOISE_2_OCTAVES_MIN,
             noise_max: NOISE_2_OCTAVES_MAX,
+            iron_ore_count: 0,
+            copper_ore_count: 0,
+            gold_ore_count: 0,
         }
     }
     pub fn get(&mut self, x: i32, y: i32, z: i32) -> Tile {
@@ -307,6 +313,12 @@ impl Map {
         chooser(copper_ore_depth, COPPER);
         chooser(gold_ore_depth, GOLD);
         chooser(iron_ore_depth, IRON);
+        match ore_kind {
+            IRON => self.iron_ore_count += 1,
+            COPPER => self.copper_ore_count += 1,
+            GOLD => self.gold_ore_count += 1,
+            _ => (),
+        }
 
         let distance = z_level as i16 - terrain_height;
         let image_id = if distance > 0 {

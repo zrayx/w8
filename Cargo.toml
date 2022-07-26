@@ -10,3 +10,6 @@ rzdb = { path = "../rzdb" }
 sfml = "0.16.0"
 rand = "0.8.4"
 simdnoise = "3.1.6"
+
+[profile.release]
+debug = true

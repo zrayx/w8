@@ -19,7 +19,7 @@ mod image;
 mod map;
 mod tile;
 
-use image::{ImageId, MultiImage, IMAGES_USED_X, IMAGES_USED_Y, TILESIZE};
+use image::{ImageId, MultiImage, IMAGES_USED_X, IMAGES_USED_Y, TILESIZE, WATER};
 use map::Map;
 use tile::Tile;
 
@@ -117,7 +117,7 @@ fn main() {
     let mut scale = (estimated_dpi as f32 / 400.1 * 4.0).floor();
 
     let mut text_object = Text::new("", &font, 9 * scale as u32);
-    scale = 0.5;
+    // scale = 1.0;
     let mut dbg_message = String::new();
     text_object.set_outline_color(Color::BLACK);
     text_object.set_outline_thickness(1.0);
@@ -131,11 +131,15 @@ fn main() {
     let mut middle_button_start_grid_xy = None;
 
     // map movement
-    let mut dx = -80;
-    let mut dy = 0;
-    let mut dz = 1;
-
-    let mut fog = false;
+    let mut dx = -100;
+    let mut dy = -100;
+    let grid_size = win_to_grid(vu2f(window.size()), scale);
+    let middle = grid_size / 2;
+    let mut dz = -30;
+    while map.get(middle.x + dx, middle.y + dy, dz).image_id.is_some() {
+        dz += 1;
+    }
+    let mut fog = true;
 
     let mut clock_dx = Clock::start();
     let mut clock_dy = Clock::start();
@@ -356,21 +360,17 @@ fn main() {
         };
 
         // calculate object positions and texture coordinates
-        // map
         let mut images_used = vec![];
         for pos_y in tile_min_pos.y..=tile_max_pos.y {
             for pos_x in tile_min_pos.x..=tile_max_pos.x {
-                // for pos_y in -5..=15 {
-                //     for pos_x in -5..=5 {
-                // check if tile is visible
                 let mut visible = true;
                 if fog {
                     visible = false;
-
-                    for iz in -1..=1 {
+                    for iz in -0..=0 {
                         for iy in -1..=1 {
                             for ix in -1..=1 {
-                                if map.get(pos_x + ix, pos_y + iy, dz + iz).image_id.is_none() {
+                                let image_id = map.get(pos_x + ix, pos_y + iy, dz + iz).image_id;
+                                if image_id.is_none() || image_id == Some(WATER) {
                                     visible = true;
                                     break;
                                 }
@@ -380,15 +380,31 @@ fn main() {
                 }
                 if visible {
                     let mut alpha = 1.0;
-                    for pos_z_pos in 0..10 {
+                    let mut image_id = None;
+                    let mut old_image_id;
+                    for pos_z_pos in 0..20 {
                         let pos_z_neg = -pos_z_pos;
-                        if let Some(image_id) = map.get(pos_x, pos_y, pos_z_neg + dz).image_id {
+                        old_image_id = image_id;
+                        image_id = map.get(pos_x, pos_y, pos_z_neg + dz).image_id;
+                        if image_id == None || image_id == Some(WATER) {
+                            if pos_z_pos == 0 {
+                                alpha *= 0.7;
+                            } else {
+                                alpha *= 0.8;
+                            }
+                        } else {
+                            let image_id = if old_image_id == Some(WATER) {
+                                WATER
+                            } else {
+                                image_id.unwrap()
+                            };
+                            let color = Color::rgba(255, 255, 255, (alpha * 255.0) as u8);
                             push_texture_coordinates(
                                 image_id,
                                 pos_x - dx,
                                 pos_y - dy,
                                 scale,
-                                alpha,
+                                color,
                                 &mut buf,
                             );
                             num_sprites += 1;
@@ -398,7 +414,6 @@ fn main() {
                             images_used[image_id as usize] += 1;
                             break;
                         }
-                        alpha *= 0.8;
                     }
                 }
             }
@@ -410,12 +425,19 @@ fn main() {
             let image_id = obj.image_id;
             let pos_x = obj.position.x;
             let pos_y = obj.position.y;
-            push_texture_coordinates(image_id, pos_x, pos_y, scale, 1.0, &mut buf);
+            push_texture_coordinates(image_id, pos_x, pos_y, scale, Color::WHITE, &mut buf);
         }
         // mouse
         match mouse_selection.clone() {
             MouseObject::ImageId(image_id) => {
-                push_texture_coordinates(image_id, mouse_pos.x, mouse_pos.y, scale, 1.0, &mut buf);
+                push_texture_coordinates(
+                    image_id,
+                    mouse_pos.x,
+                    mouse_pos.y,
+                    scale,
+                    Color::WHITE,
+                    &mut buf,
+                );
                 num_sprites += 1;
             }
             MouseObject::MultiImage(multi_image) => {
@@ -427,7 +449,14 @@ fn main() {
                         mouse_pos.y - dy + image_y as i32 - multi_image.min_y as i32,
                     );
 
-                    push_texture_coordinates(image_id, x as i32, y as i32, scale, 1.0, &mut buf);
+                    push_texture_coordinates(
+                        image_id,
+                        x as i32,
+                        y as i32,
+                        scale,
+                        Color::WHITE,
+                        &mut buf,
+                    );
                     num_sprites += 1;
                 }
             }
@@ -457,10 +486,18 @@ fn main() {
                 _ = write!(image_message, "{}:{},", image_id, count);
             }
         }
+        let ore_message = format!(
+            "iron ore: {}, copper ore: {}, gold ore: {}",
+            map.iron_ore_count, map.copper_ore_count, map.gold_ore_count
+        );
+        map.iron_ore_count = 0;
+        map.copper_ore_count = 0;
+        map.gold_ore_count = 0;
+
         let mouse_pos = win_to_grid(vi2f(window.mouse_position()), scale);
         let mouse_message = format!("mouse:{},{}", mouse_pos.x + dx, mouse_pos.y + dy);
         let message = format!(
-            "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}\nfog: {}\n{}\n{}\n{}",
+            "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}\nfog: {}\n{}\n{}\n{}\n{}",
             num_sprites,
             fps,
             scale,
@@ -469,6 +506,7 @@ fn main() {
             fog,
             dbg_message,
             image_message,
+            ore_message,
             mouse_message
         );
         text_object.set_string(&message);
@@ -524,7 +562,7 @@ fn push_texture_coordinates(
     pos_x: i32,
     pos_y: i32,
     scale: f32,
-    alpha: f32,
+    color: Color,
     buf: &mut Vec<Vertex>,
 ) {
     let tilesize = TILESIZE as f32;
@@ -539,8 +577,6 @@ fn push_texture_coordinates(
         0. * scale * tilesize / 2.0,
         0. * scale * tilesize / 2.0,
     );
-
-    let color = Color::rgba(255, 255, 255, (alpha * 255.0) as u8);
 
     buf.push(Vertex {
         color,
