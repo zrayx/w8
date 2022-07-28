@@ -123,13 +123,12 @@ const NOISE_GOLD_ORE: NoiseMeta = NoiseMeta {
 const NOISE_3D_COUNT: usize = 3;
 
 struct Noise {
-    data: Option<Vec<i16>>, // "2d" array of chunksize*chunksize values
+    data: Vec<i16>, // chunksize*chunksize values for 2d noise, chunksize*chunksize*chunksize values for 3d noise
 }
 
 pub struct Map {
-    chunks: Vec<Vec<Vec<Chunk>>>,
-    noise_2d: Vec<Vec<Vec<Noise>>>, // array of array[][] of chunks
-    noise_3d: Vec<Vec<Vec<Vec<Noise>>>>, // array of array[][][] of chunks
+    chunks_modified: Vec<Vec<Vec<Chunk>>>,
+    chunks_generated: Vec<Vec<Vec<Chunk>>>,
     noise_min: f32,
     noise_max: f32,
     pub iron_ore_count: usize,
@@ -138,18 +137,9 @@ pub struct Map {
 }
 impl Map {
     pub fn new() -> Self {
-        let mut noise_2d = vec![];
-        for _ in 0..NOISE_2D_COUNT {
-            noise_2d.push(vec![]);
-        }
-        let mut noise_3d = vec![];
-        for _ in 0..NOISE_3D_COUNT {
-            noise_3d.push(vec![]);
-        }
         Map {
-            chunks: vec![],
-            noise_2d,
-            noise_3d,
+            chunks_modified: vec![],
+            chunks_generated: vec![],
             noise_min: NOISE_2_OCTAVES_MIN,
             noise_max: NOISE_2_OCTAVES_MAX,
             iron_ore_count: 0,
@@ -158,51 +148,50 @@ impl Map {
         }
     }
     pub fn get(&mut self, x: i32, y: i32, z: i32) -> Tile {
-        let (encoded_x, encoded_y, encoded_z) = (i_to_u(x), i_to_u(y), i_to_u(z));
-        let chunk_x = encoded_x / Chunk::chunksize() as usize;
-        let chunk_y = encoded_y / Chunk::chunksize() as usize;
-        let chunk_z = encoded_z / Chunk::chunksize() as usize;
-        if chunk_z < self.chunks.len()
-            && chunk_y < self.chunks[chunk_z].len()
-            && chunk_x < self.chunks[chunk_z][chunk_y].len()
+        let (chunk_x, rest_x) = chunkify(x);
+        let (chunk_y, rest_y) = chunkify(y);
+        let (chunk_z, rest_z) = chunkify(z);
+        if chunk_z < self.chunks_modified.len()
+            && chunk_y < self.chunks_modified[chunk_z].len()
+            && chunk_x < self.chunks_modified[chunk_z][chunk_y].len()
         {
-            let chunk = &self.chunks[chunk_z][chunk_y][chunk_x];
-            let x = encoded_x % Chunk::chunksize() as usize;
-            let y = encoded_y % Chunk::chunksize() as usize;
-            let z = encoded_z % Chunk::chunksize() as usize;
-            if let Some(tile) = chunk.get(x, y, z) {
-                tile
-            } else {
-                self.get_from_noise(encoded_x, encoded_y, encoded_z)
+            let chunk = &self.chunks_modified[chunk_z][chunk_y][chunk_x];
+            if let Some(tile) = chunk.get(rest_x, rest_y, rest_z) {
+                return tile;
             }
-        } else {
-            self.get_from_noise(encoded_x, encoded_y, encoded_z)
         }
+        if chunk_z < self.chunks_modified.len()
+            && chunk_y < self.chunks_modified[chunk_z].len()
+            && chunk_x < self.chunks_modified[chunk_z][chunk_y].len()
+        {
+            let chunk = &self.chunks_modified[chunk_z][chunk_y][chunk_x];
+            if let Some(tile) = chunk.get(rest_x, rest_y, rest_z) {
+                return tile;
+            }
+        }
+        self.generate_noise(chunk_x, chunk_y, chunk_z);
+        self.chunks_generated[chunk_z][chunk_y][chunk_x]
+            .get(rest_x, rest_y, rest_z)
+            .unwrap()
     }
 
     // TODO: We take the old encoding and encode into the new one. Switch everything to new encoding.
-    fn get_from_noise(&mut self, encoded_x: usize, encoded_y: usize, encoded_z: usize) -> Tile {
+    fn generate_noise(&mut self, chunk_x: usize, chunk_y: usize, chunk_z: usize) {
         let chunksize = Chunk::chunksize();
-        let (decoded_x, decoded_y, z_level) =
-            (u_to_i(encoded_x), u_to_i(encoded_y), u_to_i(encoded_z));
-        let (chunk_x, rest_x) = chunkify(decoded_x);
-        let (chunk_y, rest_y) = chunkify(decoded_y);
-        let (chunk_z, rest_z) = chunkify(z_level);
-
-        for id in 0..NOISE_2D_COUNT {
-            let noise_struct = match id {
-                0 => &NOISE_TERRAIN_HEIGHT,
-                1 => &NOISE_SOIL_THICKNESS,
-                _ => unreachable!(),
-            };
-            while self.noise_2d[id].len() <= chunk_y {
-                self.noise_2d[id].push(vec![]);
+        let has_data = {
+            let chunk = self.get_chunk_generated_mut(chunk_x, chunk_y, chunk_z);
+            chunk.has_data()
+        };
+        if !has_data {
+            let mut noise_2d = vec![];
+            for _ in 0..NOISE_2D_COUNT {
+                noise_2d.push(Noise { data: vec![] });
             }
-            while self.noise_2d[id][chunk_y].len() <= chunk_x {
-                self.noise_2d[id][chunk_y].push(Noise { data: None });
-            }
-            let noise = &mut self.noise_2d[id][chunk_y][chunk_x];
-            if noise.data.is_none() {
+            for (id, noise_struct) in [NOISE_TERRAIN_HEIGHT, NOISE_SOIL_THICKNESS]
+                .iter()
+                .enumerate()
+            {
+                let noise = &mut noise_2d[id];
                 let (data, min, max) = simdnoise::NoiseBuilder::fbm_2d_offset(
                     (u_to_i(chunk_x) * chunksize as i32) as f32,
                     chunksize,
@@ -222,37 +211,26 @@ impl Map {
                     self.noise_max = self.noise_max.max(max);
                     println!("new noise_2d[{}] max: {}", id, max);
                 }
-                noise.data = Some(
-                    data.iter()
-                        .map(|x| {
-                            ((x - noise_struct.noise_min)
-                                / (noise_struct.noise_max - noise_struct.noise_min)
-                                * (noise_struct.max_value - noise_struct.min_value) as f32
-                                + noise_struct.min_value as f32) as i16
-                        })
-                        .collect(),
-                );
+                noise.data = data
+                    .iter()
+                    .map(|x| {
+                        ((x - noise_struct.noise_min)
+                            / (noise_struct.noise_max - noise_struct.noise_min)
+                            * (noise_struct.max_value - noise_struct.min_value) as f32
+                            + noise_struct.min_value as f32) as i16
+                    })
+                    .collect();
             }
-        }
 
-        for id in 0..NOISE_3D_COUNT {
-            let noise_struct = match id {
-                0 => &NOISE_IRON_ORE,
-                1 => &NOISE_COPPER_ORE,
-                2 => &NOISE_GOLD_ORE,
-                _ => unreachable!(),
-            };
-            while self.noise_3d[id].len() <= chunk_z {
-                self.noise_3d[id].push(vec![]);
+            let mut noise_3d = vec![];
+            for _ in 0..NOISE_3D_COUNT {
+                noise_3d.push(Noise { data: vec![] });
             }
-            while self.noise_3d[id][chunk_z].len() <= chunk_y {
-                self.noise_3d[id][chunk_z].push(vec![]);
-            }
-            while self.noise_3d[id][chunk_z][chunk_y].len() <= chunk_x {
-                self.noise_3d[id][chunk_z][chunk_y].push(Noise { data: None });
-            }
-            let noise = &mut self.noise_3d[id][chunk_z][chunk_y][chunk_x];
-            if noise.data.is_none() {
+            for (id, noise_struct) in [NOISE_IRON_ORE, NOISE_COPPER_ORE, NOISE_GOLD_ORE]
+                .iter()
+                .enumerate()
+            {
+                let noise = &mut noise_3d[id];
                 let (data, min, max) = simdnoise::NoiseBuilder::fbm_3d_offset(
                     (u_to_i(chunk_x) * chunksize as i32) as f32,
                     chunksize,
@@ -274,88 +252,89 @@ impl Map {
                     self.noise_max = self.noise_max.max(max);
                     println!("new noise_3d[{}] max: {}", id, max);
                 }
-                noise.data = Some(
-                    data.iter()
-                        .map(|x| {
-                            ((x - noise_struct.noise_min)
-                                / (noise_struct.noise_max - noise_struct.noise_min)
-                                * (noise_struct.max_value - noise_struct.min_value) as f32
-                                + noise_struct.min_value as f32) as i16
-                        })
-                        .collect(),
-                );
+                noise.data = data
+                    .iter()
+                    .map(|x| {
+                        ((x - noise_struct.noise_min)
+                            / (noise_struct.noise_max - noise_struct.noise_min)
+                            * (noise_struct.max_value - noise_struct.min_value) as f32
+                            + noise_struct.min_value as f32) as i16
+                    })
+                    .collect();
             }
-        }
 
-        let idx_2d = rest_x + rest_y * chunksize;
+            let mut tiles_z = vec![];
+            for z in 0..chunksize {
+                let mut tiles_y = vec![];
+                for y in 0..chunksize {
+                    let mut tiles_x = vec![];
+                    for x in 0..chunksize {
+                        let idx_2d = x + y * chunksize;
 
-        let terrain_height = &self.noise_2d[NOISE_TERRAIN_HEIGHT.id][chunk_y][chunk_x];
-        let terrain_height = terrain_height.data.as_ref().unwrap()[idx_2d];
+                        let terrain_height = noise_2d[NOISE_TERRAIN_HEIGHT.id].data[idx_2d];
+                        let soil_thickness = noise_2d[NOISE_SOIL_THICKNESS.id].data[idx_2d];
 
-        let soil_thickness = &self.noise_2d[NOISE_SOIL_THICKNESS.id][chunk_y][chunk_x];
-        let soil_thickness = soil_thickness.data.as_ref().unwrap()[idx_2d];
+                        let idx_3d = x + y * chunksize + z * chunksize * chunksize;
+                        let iron_ore_depth = noise_3d[NOISE_IRON_ORE.id].data[idx_3d];
+                        let copper_ore_depth = noise_3d[NOISE_COPPER_ORE.id].data[idx_3d];
+                        let gold_ore_depth = noise_3d[NOISE_GOLD_ORE.id].data[idx_3d];
 
-        let idx_3d = rest_x + rest_y * chunksize + rest_z * chunksize * chunksize;
-        let iron_ore_depth = &self.noise_3d[NOISE_IRON_ORE.id][chunk_z][chunk_y][chunk_x];
-        let iron_ore_depth = iron_ore_depth.data.as_ref().unwrap()[idx_3d];
-        let copper_ore_depth = &self.noise_3d[NOISE_COPPER_ORE.id][chunk_z][chunk_y][chunk_x];
-        let copper_ore_depth = copper_ore_depth.data.as_ref().unwrap()[idx_3d];
-        let gold_ore_depth = &self.noise_3d[NOISE_GOLD_ORE.id][chunk_z][chunk_y][chunk_x];
-        let gold_ore_depth = gold_ore_depth.data.as_ref().unwrap()[idx_3d];
+                        let mut ore_kind = STONE;
+                        let mut chooser = |value, ore_type| {
+                            if value < 0 {
+                                ore_kind = ore_type;
+                            }
+                        };
+                        // latter overwrites former
+                        chooser(copper_ore_depth, COPPER);
+                        chooser(gold_ore_depth, GOLD);
+                        chooser(iron_ore_depth, IRON);
+                        match ore_kind {
+                            IRON => self.iron_ore_count += 1,
+                            COPPER => self.copper_ore_count += 1,
+                            GOLD => self.gold_ore_count += 1,
+                            _ => (),
+                        }
 
-        let mut ore_kind = STONE;
-        let mut chooser = |value, ore_type| {
-            if value < 0 {
-                ore_kind = ore_type;
+                        let z_level = u_to_i(chunk_z) as i16 * chunksize as i16 + z as i16;
+                        let distance = z_level as i16 - terrain_height;
+                        let image_id = if distance > 0 {
+                            if terrain_height <= 0 && z_level <= 0 {
+                                Some(WATER)
+                            } else {
+                                None
+                            }
+                        } else if distance == 0 {
+                            if terrain_height >= 0 {
+                                Some(GRASS)
+                            } else {
+                                Some(DIRT)
+                            }
+                        } else if distance < 0 && distance >= -soil_thickness {
+                            Some(DIRT)
+                        } else {
+                            Some(ore_kind)
+                        };
+                        tiles_x.push(Some(Tile {
+                            bg: image_id,
+                            fg: None,
+                        }));
+                    }
+                    tiles_y.push(tiles_x);
+                }
+                tiles_z.push(tiles_y);
             }
-        };
-        // latter overwrites former
-        chooser(copper_ore_depth, COPPER);
-        chooser(gold_ore_depth, GOLD);
-        chooser(iron_ore_depth, IRON);
-        match ore_kind {
-            IRON => self.iron_ore_count += 1,
-            COPPER => self.copper_ore_count += 1,
-            GOLD => self.gold_ore_count += 1,
-            _ => (),
-        }
-
-        let distance = z_level as i16 - terrain_height;
-        let image_id = if distance > 0 {
-            if terrain_height <= 0 && z_level <= 0 {
-                Some(WATER)
-            } else {
-                None
-            }
-        } else if distance == 0 {
-            if terrain_height >= 0 {
-                Some(GRASS)
-            } else {
-                Some(DIRT)
-            }
-        } else if distance < 0 && distance >= -soil_thickness {
-            Some(DIRT)
-        } else {
-            Some(ore_kind)
-        };
-        Tile {
-            bg: image_id,
-            fg: None,
+            let mut chunk = self.get_chunk_generated_mut(chunk_x, chunk_y, chunk_z);
+            chunk.tiles = tiles_z;
         }
     }
 
     pub fn set(&mut self, x: i32, y: i32, z: i32, tile: Tile) {
-        let (x, y, z) = (i_to_u(x), i_to_u(y), i_to_u(z));
-        let chunk_x = x / Chunk::chunksize() as usize;
-        let chunk_y = y / Chunk::chunksize() as usize;
-        let chunk_z = z / Chunk::chunksize() as usize;
-        let chunk = self.get_chunk_expanded_mut(chunk_x, chunk_y, chunk_z);
-        let (x, y, z) = (
-            x % Chunk::chunksize(),
-            y % Chunk::chunksize(),
-            z % Chunk::chunksize(),
-        );
-        chunk.set(x, y, z, tile);
+        let (chunk_x, rest_x) = chunkify(x);
+        let (chunk_y, rest_y) = chunkify(y);
+        let (chunk_z, rest_z) = chunkify(z);
+        self.get_chunk_modified_mut(chunk_x, chunk_y, chunk_z)
+            .set(rest_x, rest_y, rest_z, tile);
     }
     pub fn set_multi_fg(&mut self, x: i32, y: i32, z: i32, multi_image: MultiImage) {
         let (dx, dy) = (multi_image.size_x as i32 / 2, multi_image.size_y as i32 / 2);
@@ -372,23 +351,43 @@ impl Map {
             self.set(x, y, z, tile);
         }
     }
-    fn get_chunk_expanded_mut(
+
+    fn get_chunk_modified_mut(
         &mut self,
         chunk_x: usize,
         chunk_y: usize,
         chunk_z: usize,
     ) -> &mut Chunk {
-        while self.chunks.len() < chunk_z + 1 {
-            self.chunks.push(vec![]);
+        while self.chunks_modified.len() < chunk_z + 1 {
+            self.chunks_modified.push(vec![]);
         }
-        while self.chunks[chunk_z].len() < chunk_y + 1 {
-            self.chunks[chunk_z].push(vec![]);
+        while self.chunks_modified[chunk_z].len() < chunk_y + 1 {
+            self.chunks_modified[chunk_z].push(vec![]);
         }
-        while self.chunks[chunk_z][chunk_y].len() < chunk_x + 1 {
-            self.chunks[chunk_z][chunk_y].push(Chunk::new());
+        while self.chunks_modified[chunk_z][chunk_y].len() < chunk_x + 1 {
+            self.chunks_modified[chunk_z][chunk_y].push(Chunk::new());
         }
-        &mut self.chunks[chunk_z][chunk_y][chunk_x]
+        &mut self.chunks_modified[chunk_z][chunk_y][chunk_x]
     }
+
+    fn get_chunk_generated_mut(
+        &mut self,
+        chunk_x: usize,
+        chunk_y: usize,
+        chunk_z: usize,
+    ) -> &mut Chunk {
+        while self.chunks_generated.len() < chunk_z + 1 {
+            self.chunks_generated.push(vec![]);
+        }
+        while self.chunks_generated[chunk_z].len() < chunk_y + 1 {
+            self.chunks_generated[chunk_z].push(vec![]);
+        }
+        while self.chunks_generated[chunk_z][chunk_y].len() < chunk_x + 1 {
+            self.chunks_generated[chunk_z][chunk_y].push(Chunk::new());
+        }
+        &mut self.chunks_generated[chunk_z][chunk_y][chunk_x]
+    }
+
     /// Store the map in the database.
     /// Data format:
     /// chunk_x,chunk_y,chunk_z,z,y,x0,x1,x2...xn where n is Chunk::chunksize()-1
@@ -405,7 +404,7 @@ impl Map {
             db.create_column(table_name, &format!("fg{i}"))?;
         }
 
-        for (z, chunk_z) in self.chunks.iter().enumerate() {
+        for (z, chunk_z) in self.chunks_modified.iter().enumerate() {
             for (y, chunk_y) in chunk_z.iter().enumerate() {
                 for (x, chunk_x) in chunk_y.iter().enumerate() {
                     let (x, y, z) = (u_to_i(x), u_to_i(y), u_to_i(z));
@@ -432,7 +431,7 @@ impl Map {
                             i_to_u(chunk_y as i32),
                             i_to_u(chunk_z as i32),
                         );
-                        let chunk = self.get_chunk_expanded_mut(chunk_x, chunk_y, chunk_z);
+                        let chunk = self.get_chunk_modified_mut(chunk_x, chunk_y, chunk_z);
                         chunk.parse_row(row)?;
                     } else {
                         return make_error("chunk_z is not an int");

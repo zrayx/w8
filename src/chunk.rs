@@ -8,7 +8,7 @@ use crate::tile::Tile;
 /// tile == Some(ImageId::None) means the tile is empty and must not be generated
 pub struct Chunk {
     // Vec<Z>, Z=Vec<Y>, Y=Vec<X>
-    tiles: Vec<Vec<Vec<Option<Tile>>>>,
+    pub tiles: Vec<Vec<Vec<Option<Tile>>>>,
 }
 impl Chunk {
     pub fn chunksize() -> usize {
@@ -16,6 +16,9 @@ impl Chunk {
     }
     pub fn new() -> Self {
         Chunk { tiles: vec![] }
+    }
+    pub fn has_data(&self) -> bool {
+        !self.tiles.is_empty()
     }
     pub fn get(&self, x: usize, y: usize, z: usize) -> Option<Tile> {
         if z < self.tiles.len() && y < self.tiles[z].len() && x < self.tiles[z][y].len() {
