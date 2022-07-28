@@ -120,15 +120,16 @@ fn main() {
     let mut rs = RenderStates::default();
     let mut buf = Vec::new();
     let mut current_frames_rendered = 0;
-    let mut sec_clock = Clock::start();
+    let mut fps_clock = Clock::start();
+    let mut frame_timer = Clock::start();
     let mut fps = 0;
     let mut mouse_selection = MouseObject::ImageId(0);
     let mut middle_button_start_window_xy = None;
     let mut middle_button_start_grid_xy = None;
 
     // map movement
-    let mut dx = -200;
-    let mut dy = -30;
+    let mut dx = 120;
+    let mut dy = -15;
     let grid_size = win_to_grid(vu2f(window.size()), scale);
     let middle = grid_size / 2;
     let mut dz = -30;
@@ -143,6 +144,10 @@ fn main() {
     let (mut matrix, mut matrix_offset_y) = make_matrix(scale);
 
     while window.is_open() {
+        // frame time for deciding if zoom can be decreased
+        let frame_time = frame_timer.elapsed_time().as_milliseconds();
+        frame_timer.restart();
+
         let mouse_pos = win_to_grid(vi2f(window.mouse_position()), scale);
         while let Some(event) = window.poll_event() {
             match event {
@@ -179,19 +184,22 @@ fn main() {
                     if wheel == Wheel::Vertical {
                         if Key::is_pressed(Key::LCONTROL) || Key::is_pressed(Key::RCONTROL) {
                             let device_pixels_per_tile_old = TILESIZE as f32 * scale;
-                            scale = if scale < 1.1 && delta < 0. {
-                                if fps > 30 {
-                                    fps = 0; // reset fps to prevent taking old value into account
-                                    current_frames_rendered = 0;
-                                    scale / 2.0
+                            // don't zoom out if fps would be below approx. 10
+                            if delta < 0. {
+                                if scale < 1.95 {
+                                    if frame_time < 25 {
+                                        scale /= 2.0;
+                                    }
+                                } else if frame_time < 50 {
+                                    scale -= 1.0
+                                };
+                            } else if delta > 0. {
+                                if scale < 1.1 {
+                                    scale *= 2.0
                                 } else {
-                                    scale
+                                    scale = (1.1 + scale).floor()
                                 }
-                            } else if scale < 1.1 && delta > 0. {
-                                scale * 2.0
-                            } else {
-                                (0.1 + scale + delta).floor()
-                            };
+                            }
                             (matrix, matrix_offset_y) = make_matrix(scale);
 
                             // when scale is changed, we need to update the map position
@@ -235,21 +243,22 @@ fn main() {
         }
 
         if window.has_focus() {
+            const F: f32 = 6.0;
             if clock_dy.elapsed_time().as_milliseconds() > 30 {
                 if Key::is_pressed(Key::S) || Key::is_pressed(Key::DOWN) {
-                    dy += 1;
+                    dy += (F / scale).max(1.0) as i32;
                     clock_dy.restart();
                 } else if Key::is_pressed(Key::W) || Key::is_pressed(Key::UP) {
-                    dy -= 1;
+                    dy -= (F / scale).max(1.0) as i32;
                     clock_dy.restart();
                 }
             }
             if clock_dx.elapsed_time().as_milliseconds() > 30 {
                 if Key::is_pressed(Key::D) || Key::is_pressed(Key::RIGHT) {
-                    dx += 1;
+                    dx += (F / scale).max(1.0) as i32;
                     clock_dx.restart();
                 } else if Key::is_pressed(Key::A) || Key::is_pressed(Key::LEFT) {
-                    dx -= 1;
+                    dx -= (F / scale).max(1.0) as i32;
                     clock_dx.restart();
                 }
             }
@@ -519,9 +528,10 @@ fn main() {
         let mouse_pos = win_to_grid(vi2f(window.mouse_position()), scale);
         let mouse_message = format!("mouse:{},{}", mouse_pos.x + dx, mouse_pos.y + dy);
         let message = format!(
-            "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}\nfog: {}\n{}\n{}\n{}",
+            "{} sprites\n{} fps ({} ms per frame)\nscale: {}\nZ: {}\n{}\nfog: {}\n{}\n{}\n{}",
             num_sprites,
             fps,
+            frame_time,
             scale,
             dz,
             selection_message,
@@ -554,9 +564,9 @@ fn main() {
 
         // calculate fps
         current_frames_rendered += 1;
-        if sec_clock.elapsed_time().as_milliseconds() >= 1000 {
+        if fps_clock.elapsed_time().as_milliseconds() >= 1000 {
             fps = current_frames_rendered;
-            sec_clock.restart();
+            fps_clock.restart();
             current_frames_rendered = 0;
         }
     }

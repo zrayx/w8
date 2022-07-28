@@ -78,7 +78,7 @@ const NOISE_SOIL_THICKNESS: NoiseMeta = NoiseMeta {
     lacunarity: 0.4,
     noise_min: NOISE_2_OCTAVES_MIN,
     noise_max: NOISE_2_OCTAVES_MAX,
-    min_value: 0,
+    min_value: 1,
     max_value: 5,
     seed: 0,
 };
