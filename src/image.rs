@@ -12,6 +12,20 @@ macro_rules! from_grid {
     };
     () => {};
 }
+pub const IS_BACKGROUND: [bool; 96] = [
+    true, false, true, true, true, false, false, false, false, false, false, false, false, false,
+    false, false, // line idx 0: grass, flower, iron, stone, gold
+    false, false, false, true, true, false, false, false, false, false, false, false, false, false,
+    false, false, // line idx 1: tree, tree, tree, water, copper
+    false, false, false, true, true, false, false, false, false, false, false, false, false, false,
+    false, false, // line idx 2: tree, tree, tree, dirt
+    false, false, false, true, true, false, false, false, false, false, false, false, false, false,
+    false, false, // line idx 3: tree, tree, tree, delete symbol
+    false, false, false, true, true, false, false, false, false, false, false, false, false, false,
+    false, false, // line idx 4: tree, flower
+    false, false, false, true, true, false, false, false, false, false, false, false, false, false,
+    false, false, // line idx 5: tree, flower
+];
 pub const STONE: ImageId = from_grid!(3, 0);
 pub const IRON: ImageId = from_grid!(2, 0);
 pub const COPPER: ImageId = from_grid!(4, 1);

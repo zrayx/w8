@@ -19,7 +19,9 @@ mod image;
 mod map;
 mod tile;
 
-use image::{ImageId, MultiImage, IMAGES_USED_X, IMAGES_USED_Y, TILESIZE, WATER};
+use image::{
+    ImageId, MultiImage, GRASS, IMAGES_USED_X, IMAGES_USED_Y, IS_BACKGROUND, TILESIZE, WATER,
+};
 use map::Map;
 use tile::Tile;
 
@@ -91,12 +93,7 @@ fn main() {
     let mut save_clock = Clock::start();
 
     let native_mode = VideoMode::desktop_mode();
-    let mut window = RenderWindow::new(
-        native_mode,
-        "Spritemark",
-        Style::NONE,
-        &ContextSettings::default(),
-    );
+    let mut window = RenderWindow::new(native_mode, "w8", Style::NONE, &ContextSettings::default());
     window.set_position(Vector2::new(0, 0));
     window.set_vertical_sync_enabled(true);
     let font = Font::from_file(example_res!("Qaz/Qaz.ttf")).unwrap();
@@ -118,7 +115,6 @@ fn main() {
 
     let mut text_object = Text::new("", &font, 9 * scale as u32);
     // scale = 1.0;
-    let mut dbg_message = String::new();
     text_object.set_outline_color(Color::BLACK);
     text_object.set_outline_thickness(1.0);
     let mut rs = RenderStates::default();
@@ -131,12 +127,12 @@ fn main() {
     let mut middle_button_start_grid_xy = None;
 
     // map movement
-    let mut dx = -100;
-    let mut dy = -100;
+    let mut dx = -200;
+    let mut dy = -30;
     let grid_size = win_to_grid(vu2f(window.size()), scale);
     let middle = grid_size / 2;
     let mut dz = -30;
-    while map.get(middle.x + dx, middle.y + dy, dz).image_id.is_some() {
+    while map.get(middle.x + dx, middle.y + dy, dz).bg.is_some() {
         dz += 1;
     }
     let mut fog = true;
@@ -170,6 +166,13 @@ fn main() {
                 } => {
                     middle_button_start_window_xy = Some(window.mouse_position());
                     middle_button_start_grid_xy = Some(Vector2i { x: dx, y: dy });
+                }
+                Event::MouseButtonReleased {
+                    button: Button::MIDDLE,
+                    ..
+                } => {
+                    middle_button_start_window_xy = None;
+                    middle_button_start_grid_xy = None;
                 }
                 #[allow(unused_variables)]
                 Event::MouseWheelScrolled { wheel, delta, x, y } => {
@@ -282,7 +285,9 @@ fn main() {
                         // pick selected image_id from map
                         for dz in 0..10 {
                             let dz = -dz;
-                            if let Some(old_image_id) = map.get(pos_x, pos_y, pos_z + dz).image_id {
+                            let tile = map.get(pos_x, pos_y, pos_z + dz);
+                            let old_image_id = if tile.fg.is_some() { tile.fg } else { tile.bg };
+                            if let Some(old_image_id) = old_image_id {
                                 let old_image = if let Some(multi_idx) =
                                     MultiImage::multi_id_from_image_id(old_image_id, &multi_objects)
                                 {
@@ -296,28 +301,35 @@ fn main() {
                         }
                         mode = Mode::Paint;
                     } else {
+                        // place image or multi-image on map
                         match mode {
                             Mode::Paint => {
                                 // place image_id on map
                                 match mouse_selection.clone() {
                                     MouseObject::ImageId(image_id) => {
+                                        let is_bg = IS_BACKGROUND[image_id as usize];
                                         map.set(
                                             pos_x,
                                             pos_y,
                                             pos_z,
                                             Tile {
-                                                image_id: Some(image_id),
+                                                bg: if is_bg {
+                                                    Some(image_id)
+                                                } else {
+                                                    Some(GRASS)
+                                                },
+                                                fg: if is_bg { None } else { Some(image_id) },
                                             },
                                         );
                                     }
                                     MouseObject::MultiImage(multi_image) => {
-                                        map.set_multi(pos_x, pos_y, pos_z, multi_image);
+                                        map.set_multi_fg(pos_x, pos_y, pos_z, multi_image);
                                     }
                                 }
                             }
                             Mode::Erase => {
                                 // erase image_id from map
-                                map.set(pos_x, pos_y, pos_z, Tile { image_id: None });
+                                map.set(pos_x, pos_y, pos_z, Tile { bg: None, fg: None });
                             }
                         }
                         save_clock.restart();
@@ -366,10 +378,10 @@ fn main() {
                 let mut visible = true;
                 if fog {
                     visible = false;
-                    for iz in -0..=0 {
+                    for iz in -0..=1 {
                         for iy in -1..=1 {
                             for ix in -1..=1 {
-                                let image_id = map.get(pos_x + ix, pos_y + iy, dz + iz).image_id;
+                                let image_id = map.get(pos_x + ix, pos_y + iy, dz + iz).bg;
                                 if image_id.is_none() || image_id == Some(WATER) {
                                     visible = true;
                                     break;
@@ -380,38 +392,48 @@ fn main() {
                 }
                 if visible {
                     let mut alpha = 1.0;
-                    let mut image_id = None;
-                    let mut old_image_id;
+                    let mut image_id_bg = None;
+                    let mut old_image_id_bg;
                     for pos_z_pos in 0..20 {
                         let pos_z_neg = -pos_z_pos;
-                        old_image_id = image_id;
-                        image_id = map.get(pos_x, pos_y, pos_z_neg + dz).image_id;
-                        if image_id == None || image_id == Some(WATER) {
+                        old_image_id_bg = image_id_bg;
+                        image_id_bg = map.get(pos_x, pos_y, pos_z_neg + dz).bg;
+                        if image_id_bg == None || image_id_bg == Some(WATER) {
                             if pos_z_pos == 0 {
                                 alpha *= 0.7;
                             } else {
                                 alpha *= 0.8;
                             }
                         } else {
-                            let image_id = if old_image_id == Some(WATER) {
+                            let image_id_bg = if old_image_id_bg == Some(WATER) {
                                 WATER
                             } else {
-                                image_id.unwrap()
+                                image_id_bg.unwrap()
                             };
                             let color = Color::rgba(255, 255, 255, (alpha * 255.0) as u8);
                             push_texture_coordinates(
-                                image_id,
+                                image_id_bg,
                                 pos_x - dx,
                                 pos_y - dy,
                                 scale,
                                 color,
                                 &mut buf,
                             );
+                            if let Some(image_id_fg) = map.get(pos_x, pos_y, pos_z_neg + dz).fg {
+                                push_texture_coordinates(
+                                    image_id_fg,
+                                    pos_x - dx,
+                                    pos_y - dy,
+                                    scale,
+                                    color,
+                                    &mut buf,
+                                );
+                            }
                             num_sprites += 1;
-                            while images_used.len() <= image_id as usize {
+                            while images_used.len() <= image_id_bg as usize {
                                 images_used.push(0);
                             }
-                            images_used[image_id as usize] += 1;
+                            images_used[image_id_bg as usize] += 1;
                             break;
                         }
                     }
@@ -497,14 +519,13 @@ fn main() {
         let mouse_pos = win_to_grid(vi2f(window.mouse_position()), scale);
         let mouse_message = format!("mouse:{},{}", mouse_pos.x + dx, mouse_pos.y + dy);
         let message = format!(
-            "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}\nfog: {}\n{}\n{}\n{}\n{}",
+            "{} sprites\n{} fps\nscale: {}\nZ: {}\n{}\nfog: {}\n{}\n{}\n{}",
             num_sprites,
             fps,
             scale,
             dz,
             selection_message,
             fog,
-            dbg_message,
             image_message,
             ore_message,
             mouse_message
@@ -521,10 +542,10 @@ fn main() {
                 save_clock.elapsed_time().as_seconds()
             );
             if let Err(err) = map.store(&mut db, table_map) {
-                _ = write!(dbg_message, " {}", err);
+                panic!(" {}", err);
             }
             if let Err(err) = db.save() {
-                _ = write!(dbg_message, " {}", err);
+                panic!(" {}", err);
             }
             println!("{:.4} Done.", save_clock.elapsed_time().as_seconds());
             save_clock.restart();

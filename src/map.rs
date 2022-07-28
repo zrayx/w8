@@ -338,7 +338,10 @@ impl Map {
         } else {
             Some(ore_kind)
         };
-        Tile { image_id }
+        Tile {
+            bg: image_id,
+            fg: None,
+        }
     }
 
     pub fn set(&mut self, x: i32, y: i32, z: i32, tile: Tile) {
@@ -354,7 +357,7 @@ impl Map {
         );
         chunk.set(x, y, z, tile);
     }
-    pub fn set_multi(&mut self, x: i32, y: i32, z: i32, multi_image: MultiImage) {
+    pub fn set_multi_fg(&mut self, x: i32, y: i32, z: i32, multi_image: MultiImage) {
         let (dx, dy) = (multi_image.size_x as i32 / 2, multi_image.size_y as i32 / 2);
         for image_id in multi_image.image_ids {
             let (image_x, image_y) = (image_id % IMAGES_X, image_id / IMAGES_X);
@@ -363,7 +366,8 @@ impl Map {
                 y - dy + image_y as i32 - multi_image.min_y as i32,
             );
             let tile = Tile {
-                image_id: Some(image_id),
+                bg: Some(GRASS),
+                fg: Some(image_id),
             };
             self.set(x, y, z, tile);
         }
@@ -397,7 +401,8 @@ impl Map {
         db.create_column(table_name, "z")?;
         db.create_column(table_name, "y")?;
         for i in 0..Chunk::chunksize() {
-            db.create_column(table_name, &format!("x{i}"))?;
+            db.create_column(table_name, &format!("bg{i}"))?;
+            db.create_column(table_name, &format!("fg{i}"))?;
         }
 
         for (z, chunk_z) in self.chunks.iter().enumerate() {
@@ -440,41 +445,5 @@ impl Map {
             }
         }
         Ok(())
-    }
-}
-
-mod test {
-    #[test]
-    fn test_map() {
-        use super::*;
-        let mut map = Map::new();
-        assert_eq!(map.get(0, 0, 0), Tile { image_id: None });
-        assert_eq!(map.get(1, 0, 0), Tile { image_id: None });
-        assert_eq!(map.get(0, -1, 0), Tile { image_id: None });
-        assert_eq!(map.get(-1, 1, 0), Tile { image_id: None });
-        for z in -3..3 {
-            for y in -3..3 {
-                for x in -3..3 {
-                    let v = (x + y + z + 9) as u16;
-                    println!("setting ({x},{y},{z}) to {v}");
-                    map.set(x, y, z, Tile { image_id: Some(v) });
-                }
-            }
-        }
-        for z in -3..3 {
-            for y in -3..3 {
-                for x in -3..3 {
-                    let v_expected = (x + y + z + 9) as u16;
-                    let v_actual = map.get(x, y, z).image_id.unwrap();
-                    println!("({x},{y},{z}) = {v_actual} (expected {v_expected})");
-                    assert_eq!(
-                        map.get(x, y, z),
-                        Tile {
-                            image_id: Some((x + y + z + 9) as u16),
-                        }
-                    );
-                }
-            }
-        }
     }
 }

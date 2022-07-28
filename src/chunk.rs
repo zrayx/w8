@@ -59,15 +59,23 @@ impl Chunk {
                         Data::Int(y as i64),
                     ];
                     for x in 0..Chunk::chunksize() {
-                        data.push(if let Some(tile) = self.get(x, y, z) {
-                            if let Some(image_id) = tile.image_id {
+                        if let Some(tile) = self.get(x, y, z) {
+                            // background
+                            data.push(if let Some(image_id) = tile.bg {
                                 Data::Int(image_id as i64)
                             } else {
                                 Data::String("-".to_string())
-                            }
+                            });
+                            // foreground
+                            data.push(if let Some(image_id) = tile.fg {
+                                Data::Int(image_id as i64)
+                            } else {
+                                Data::String("-".to_string())
+                            });
                         } else {
-                            Data::Empty
-                        });
+                            data.push(Data::Empty);
+                            data.push(Data::Empty);
+                        };
                     }
                     db.insert_data(table_name, data)?;
                 }
@@ -84,29 +92,47 @@ impl Chunk {
                 msg,
             )))
         }
+        let entry_to_image_id = |entry| {
+            if let Data::Int(image_id) = entry {
+                Some(image_id as u16)
+            } else if let Data::String(s) = entry {
+                if s == "-" {
+                    None
+                } else {
+                    panic!("invalid tile entry: {}", s);
+                }
+            } else {
+                panic!("invalid tile entry: {}", entry);
+            }
+        };
         if let Data::Int(z) = row.select_at(3)? {
             if let Data::Int(y) = row.select_at(4)? {
                 self.expand(Chunk::chunksize() - 1, y as usize, z as usize);
                 for x in 0..Chunk::chunksize() {
-                    let entry = row.select_at(5 + x)?;
-                    if entry != Data::Empty {
-                        if let Data::Int(image_id) = entry {
-                            self.set(
-                                x,
-                                y as usize,
-                                z as usize,
-                                Tile {
-                                    image_id: Some(image_id as u16),
-                                },
-                            );
-                        } else if let Data::String(s) = entry {
-                            if s == "-" {
-                                self.set(x, y as usize, z as usize, Tile { image_id: None });
-                            } else {
-                                gen_error(&format!("invalid tile entry: {}", s))?;
-                            }
-                        }
-                    }
+                    let bg = row.select_at(5 + 2 * x)?;
+                    let fg = row.select_at(5 + 2 * x + 1)?;
+                    match (bg, fg) {
+                        (Data::Empty, Data::Empty) => {} // no entry exists
+                        (bg, Data::Empty) => self.set(
+                            x,
+                            y as usize,
+                            z as usize,
+                            Tile {
+                                bg: entry_to_image_id(bg),
+                                fg: None,
+                            },
+                        ),
+                        (Data::Empty, _) => unreachable!(),
+                        (bg, fg) => self.set(
+                            x,
+                            y as usize,
+                            z as usize,
+                            Tile {
+                                bg: entry_to_image_id(bg),
+                                fg: entry_to_image_id(fg),
+                            },
+                        ),
+                    };
                 }
             } else {
                 gen_error("invalid chunk data")?;
