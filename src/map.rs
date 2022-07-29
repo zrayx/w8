@@ -3,7 +3,10 @@ use std::error::Error;
 use rzdb::{Data, Db};
 
 use crate::chunk::Chunk;
-use crate::image::{MultiImage, COPPER, DIRT, GOLD, GRASS, IMAGES_X, IRON, STONE, WATER};
+use crate::image::{
+    MultiImage, COPPER, DIRT, GOLD, GRASS, IMAGES_X, IRON, OAK_1_1, OAK_1_1_RED, OAK_1_1_SMALL,
+    PINE_1_1, STONE, WATER,
+};
 use crate::tile::Tile;
 
 /// The first bit of the index is the sign of the coordinate - both x and y
@@ -62,6 +65,7 @@ const NOISE_5_OCTAVES_MAX: f32 = 0.66;
 
 const NOISE_TERRAIN_HEIGHT: NoiseMeta = NoiseMeta {
     id: 0,
+    seed: 1,
     frequency: 0.04,
     octaves: 5,
     lacunarity: 0.4,
@@ -69,10 +73,11 @@ const NOISE_TERRAIN_HEIGHT: NoiseMeta = NoiseMeta {
     noise_max: NOISE_5_OCTAVES_MAX,
     min_value: -8,
     max_value: 16,
-    seed: 1,
 };
+
 const NOISE_SOIL_THICKNESS: NoiseMeta = NoiseMeta {
     id: 1,
+    seed: 0,
     frequency: 0.02,
     octaves: 2,
     lacunarity: 0.4,
@@ -80,12 +85,25 @@ const NOISE_SOIL_THICKNESS: NoiseMeta = NoiseMeta {
     noise_max: NOISE_2_OCTAVES_MAX,
     min_value: 1,
     max_value: 5,
-    seed: 0,
 };
-const NOISE_2D_COUNT: usize = 2;
+
+const NOISE_VEGETATION: NoiseMeta = NoiseMeta {
+    id: 2,
+    seed: 2,
+    frequency: 0.06,
+    octaves: 2,
+    lacunarity: 0.4,
+    noise_min: NOISE_2_OCTAVES_MIN,
+    noise_max: NOISE_2_OCTAVES_MAX,
+    min_value: 0,
+    max_value: 50,
+};
+
+const NOISE_2D_COUNT: usize = 3;
 
 const NOISE_IRON_ORE: NoiseMeta = NoiseMeta {
     id: 0,
+    seed: 3,
     frequency: 0.06,
     octaves: 2,
     lacunarity: 0.4,
@@ -93,11 +111,11 @@ const NOISE_IRON_ORE: NoiseMeta = NoiseMeta {
     noise_max: NOISE_2_OCTAVES_MAX,
     min_value: -6,
     max_value: 20,
-    seed: 3,
 };
 
 const NOISE_COPPER_ORE: NoiseMeta = NoiseMeta {
     id: 1,
+    seed: 4,
     frequency: 0.06,
     octaves: 2,
     lacunarity: 0.4,
@@ -105,11 +123,11 @@ const NOISE_COPPER_ORE: NoiseMeta = NoiseMeta {
     noise_max: NOISE_2_OCTAVES_MAX,
     min_value: -6,
     max_value: 20,
-    seed: 4,
 };
 
 const NOISE_GOLD_ORE: NoiseMeta = NoiseMeta {
     id: 2,
+    seed: 5,
     frequency: 0.16,
     octaves: 2,
     lacunarity: 0.4,
@@ -117,7 +135,6 @@ const NOISE_GOLD_ORE: NoiseMeta = NoiseMeta {
     noise_max: NOISE_2_OCTAVES_MAX,
     min_value: -6,
     max_value: 50,
-    seed: 5,
 };
 
 const NOISE_3D_COUNT: usize = 3;
@@ -187,7 +204,7 @@ impl Map {
             for _ in 0..NOISE_2D_COUNT {
                 noise_2d.push(Noise { data: vec![] });
             }
-            for (id, noise_struct) in [NOISE_TERRAIN_HEIGHT, NOISE_SOIL_THICKNESS]
+            for (id, noise_struct) in [NOISE_TERRAIN_HEIGHT, NOISE_SOIL_THICKNESS, NOISE_VEGETATION]
                 .iter()
                 .enumerate()
             {
@@ -273,6 +290,7 @@ impl Map {
 
                         let terrain_height = noise_2d[NOISE_TERRAIN_HEIGHT.id].data[idx_2d];
                         let soil_thickness = noise_2d[NOISE_SOIL_THICKNESS.id].data[idx_2d];
+                        let vegetation = noise_2d[NOISE_VEGETATION.id].data[idx_2d];
 
                         let idx_3d = x + y * chunksize + z * chunksize * chunksize;
                         let iron_ore_depth = noise_3d[NOISE_IRON_ORE.id].data[idx_3d];
@@ -298,7 +316,7 @@ impl Map {
 
                         let z_level = u_to_i(chunk_z) as i16 * chunksize as i16 + z as i16;
                         let distance = z_level as i16 - terrain_height;
-                        let image_id = if distance > 0 {
+                        let bg = if distance > 0 {
                             if terrain_height <= 0 && z_level <= 0 {
                                 Some(WATER)
                             } else {
@@ -315,10 +333,18 @@ impl Map {
                         } else {
                             Some(ore_kind)
                         };
-                        tiles_x.push(Some(Tile {
-                            bg: image_id,
-                            fg: None,
-                        }));
+                        let fg = if bg == Some(GRASS) {
+                            match vegetation {
+                                0..=24 => Some(PINE_1_1),
+                                25 => Some(OAK_1_1),
+                                26 => Some(OAK_1_1_RED),
+                                27 => Some(OAK_1_1_SMALL),
+                                _ => None,
+                            }
+                        } else {
+                            None
+                        };
+                        tiles_x.push(Some(Tile { bg, fg }));
                     }
                     tiles_y.push(tiles_x);
                 }

@@ -26,6 +26,7 @@ pub const IS_BACKGROUND: [bool; 96] = [
     false, false, false, true, true, false, false, false, false, false, false, false, false, false,
     false, false, // line idx 5: tree, flower
 ];
+
 pub const STONE: ImageId = from_grid!(3, 0);
 pub const IRON: ImageId = from_grid!(2, 0);
 pub const COPPER: ImageId = from_grid!(4, 1);
@@ -37,6 +38,25 @@ pub const WATER: ImageId = from_grid!(3, 1);
 pub const FLOWER1: ImageId = from_grid!(1, 0);
 #[allow(dead_code)]
 pub const FLOWER2: ImageId = from_grid!(1, 4);
+#[allow(dead_code)]
+pub const PINE_3_1: ImageId = from_grid!(0, 3);
+#[allow(dead_code)]
+pub const PINE_3_1_2: ImageId = from_grid!(0, 2);
+#[allow(dead_code)]
+pub const PINE_3_1_3: ImageId = from_grid!(0, 1);
+#[allow(dead_code)]
+pub const PINE_2_1: ImageId = from_grid!(1, 3);
+#[allow(dead_code)]
+pub const PINE_2_1_2: ImageId = from_grid!(1, 2);
+pub const PINE_1_1: ImageId = from_grid!(2, 3);
+#[allow(dead_code)]
+pub const OAK_2_1: ImageId = from_grid!(0, 5);
+#[allow(dead_code)]
+pub const OAK_2_1_2: ImageId = from_grid!(0, 4);
+pub const OAK_1_1: ImageId = from_grid!(2, 2);
+pub const OAK_1_1_RED: ImageId = from_grid!(2, 1);
+pub const OAK_1_1_SMALL: ImageId = from_grid!(1, 1);
+
 #[derive(Clone, Copy)]
 pub struct MultiImagePart {
     pub image_id: ImageId,

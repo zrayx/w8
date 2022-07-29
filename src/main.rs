@@ -111,7 +111,7 @@ fn main() {
     let mut mode = Mode::Paint;
 
     let estimated_dpi = if window.size().y > 4000 { 400 } else { 300 };
-    let mut scale = (estimated_dpi as f32 / 400.1 * 4.0).floor();
+    let mut scale = (estimated_dpi as f32 / 400.1 * 6.0).floor();
 
     let mut text_object = Text::new("", &font, 9 * scale as u32);
     // scale = 1.0;
@@ -128,8 +128,8 @@ fn main() {
     let mut middle_button_start_grid_xy = None;
 
     // map movement
-    let mut dx = 120;
-    let mut dy = -15;
+    let mut dx = 94;
+    let mut dy = -44;
     let grid_size = win_to_grid(vu2f(window.size()), scale);
     let middle = grid_size / 2;
     let mut dz = -30;
