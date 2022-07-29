@@ -34,10 +34,9 @@ pub const GOLD: ImageId = from_grid!(4, 0);
 pub const GRASS: ImageId = from_grid!(0, 0);
 pub const DIRT: ImageId = from_grid!(3, 2);
 pub const WATER: ImageId = from_grid!(3, 1);
-#[allow(dead_code)]
 pub const FLOWER1: ImageId = from_grid!(1, 0);
-#[allow(dead_code)]
 pub const FLOWER2: ImageId = from_grid!(1, 4);
+pub const FLOWER3: ImageId = from_grid!(1, 5);
 #[allow(dead_code)]
 pub const PINE_3_1: ImageId = from_grid!(0, 3);
 #[allow(dead_code)]

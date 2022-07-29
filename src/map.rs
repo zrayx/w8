@@ -4,8 +4,8 @@ use rzdb::{Data, Db};
 
 use crate::chunk::Chunk;
 use crate::image::{
-    MultiImage, COPPER, DIRT, GOLD, GRASS, IMAGES_X, IRON, OAK_1_1, OAK_1_1_RED, OAK_1_1_SMALL,
-    PINE_1_1, STONE, WATER,
+    MultiImage, COPPER, DIRT, FLOWER1, FLOWER2, FLOWER3, GOLD, GRASS, IMAGES_X, IRON, OAK_1_1,
+    OAK_1_1_RED, OAK_1_1_SMALL, PINE_1_1, STONE, WATER,
 };
 use crate::tile::Tile;
 
@@ -90,13 +90,13 @@ const NOISE_SOIL_THICKNESS: NoiseMeta = NoiseMeta {
 const NOISE_VEGETATION: NoiseMeta = NoiseMeta {
     id: 2,
     seed: 2,
-    frequency: 0.06,
+    frequency: 0.030,
     octaves: 2,
     lacunarity: 0.4,
     noise_min: NOISE_2_OCTAVES_MIN,
     noise_max: NOISE_2_OCTAVES_MAX,
     min_value: 0,
-    max_value: 50,
+    max_value: 300,
 };
 
 const NOISE_2D_COUNT: usize = 3;
@@ -334,12 +334,21 @@ impl Map {
                             Some(ore_kind)
                         };
                         let fg = if bg == Some(GRASS) {
-                            match vegetation {
-                                0..=24 => Some(PINE_1_1),
-                                25 => Some(OAK_1_1),
-                                26 => Some(OAK_1_1_RED),
-                                27 => Some(OAK_1_1_SMALL),
-                                _ => None,
+                            if vegetation < 150 {
+                                match vegetation % 30 {
+                                    1 | 3 | 5 | 7 | 9 | 11 | 13 | 15 => Some(PINE_1_1),
+                                    20 | 23 => Some(OAK_1_1),
+                                    26 => Some(OAK_1_1_RED),
+                                    29 => Some(OAK_1_1_SMALL),
+                                    _ => None,
+                                }
+                            } else {
+                                match vegetation - 150 {
+                                    1 => Some(FLOWER1),
+                                    5 => Some(FLOWER2),
+                                    10 => Some(FLOWER3),
+                                    _ => None,
+                                }
                             }
                         } else {
                             None
