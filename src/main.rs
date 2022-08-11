@@ -130,9 +130,10 @@ fn main() {
     // map movement
     let mut dx = 94;
     let mut dy = -44;
-    let grid_size = win_to_grid(vu2f(window.size()), scale);
-    let middle = grid_size / 2;
     let mut dz = -30;
+    let grid_size = win_to_grid(vu2f(window.size()), scale);
+    let mut cursor_size = 1;
+    let middle = grid_size / 2;
     while map.get(middle.x + dx, middle.y + dy, dz).bg.is_some() {
         dz += 1;
     }
@@ -165,6 +166,16 @@ fn main() {
                 Event::KeyPressed { code: Key::V, .. } => {
                     fog = !fog;
                 }
+                Event::KeyPressed {
+                    code: Key::EQUAL, ..
+                } => {
+                    cursor_size_increase(&mut cursor_size);
+                }
+                Event::KeyPressed {
+                    code: Key::HYPHEN, ..
+                } => {
+                    cursor_size_decrease(&mut cursor_size);
+                }
                 Event::MouseButtonPressed {
                     button: Button::MIDDLE,
                     ..
@@ -182,7 +193,13 @@ fn main() {
                 #[allow(unused_variables)]
                 Event::MouseWheelScrolled { wheel, delta, x, y } => {
                     if wheel == Wheel::Vertical {
-                        if Key::is_pressed(Key::LCONTROL) || Key::is_pressed(Key::RCONTROL) {
+                        if Key::is_pressed(Key::LALT) || Key::is_pressed(Key::RALT) {
+                            if delta > 0.0 {
+                                cursor_size_increase(&mut cursor_size);
+                            } else {
+                                cursor_size_decrease(&mut cursor_size);
+                            }
+                        } else if Key::is_pressed(Key::LCONTROL) || Key::is_pressed(Key::RCONTROL) {
                             let device_pixels_per_tile_old = TILESIZE as f32 * scale;
                             // don't zoom out if fps would be below approx. 10
                             if delta < 0. {
@@ -316,20 +333,30 @@ fn main() {
                                 // place image_id on map
                                 match mouse_selection.clone() {
                                     MouseObject::ImageId(image_id) => {
-                                        let is_bg = IS_BACKGROUND[image_id as usize];
-                                        map.set(
-                                            pos_x,
-                                            pos_y,
-                                            pos_z,
-                                            Tile {
-                                                bg: if is_bg {
-                                                    Some(image_id)
-                                                } else {
-                                                    Some(GRASS)
-                                                },
-                                                fg: if is_bg { None } else { Some(image_id) },
-                                            },
-                                        );
+                                        let plus_half = cursor_size / 2;
+                                        let minus_half = cursor_size - plus_half - 1;
+                                        for y in -minus_half..=plus_half {
+                                            for x in -minus_half..=plus_half {
+                                                let is_bg = IS_BACKGROUND[image_id as usize];
+                                                map.set(
+                                                    pos_x + x,
+                                                    pos_y + y,
+                                                    pos_z,
+                                                    Tile {
+                                                        bg: if is_bg {
+                                                            Some(image_id)
+                                                        } else {
+                                                            Some(GRASS)
+                                                        },
+                                                        fg: if is_bg {
+                                                            None
+                                                        } else {
+                                                            Some(image_id)
+                                                        },
+                                                    },
+                                                );
+                                            }
+                                        }
                                     }
                                     MouseObject::MultiImage(multi_image) => {
                                         map.set_multi_fg(pos_x, pos_y, pos_z, multi_image);
@@ -338,7 +365,18 @@ fn main() {
                             }
                             Mode::Erase => {
                                 // erase image_id from map
-                                map.set(pos_x, pos_y, pos_z, Tile { bg: None, fg: None });
+                                let plus_half = cursor_size / 2;
+                                let minus_half = cursor_size - plus_half - 1;
+                                for y in -minus_half..=plus_half {
+                                    for x in -minus_half..=plus_half {
+                                        map.set(
+                                            pos_x + x,
+                                            pos_y + y,
+                                            pos_z,
+                                            Tile { bg: None, fg: None },
+                                        );
+                                    }
+                                }
                             }
                         }
                         save_clock.restart();
@@ -448,9 +486,8 @@ fn main() {
                     }
                 }
             }
-            // println!();
         }
-        // println!();
+
         // matrix
         for obj in &mut matrix {
             let image_id = obj.image_id;
@@ -458,18 +495,25 @@ fn main() {
             let pos_y = obj.position.y;
             push_texture_coordinates(image_id, pos_x, pos_y, scale, Color::WHITE, &mut buf);
         }
+
         // mouse
         match mouse_selection.clone() {
             MouseObject::ImageId(image_id) => {
-                push_texture_coordinates(
-                    image_id,
-                    mouse_pos.x,
-                    mouse_pos.y,
-                    scale,
-                    Color::WHITE,
-                    &mut buf,
-                );
-                num_sprites += 1;
+                let plus_half = cursor_size / 2;
+                let minus_half = cursor_size - plus_half - 1;
+                for y in -minus_half..=plus_half {
+                    for x in -minus_half..=plus_half {
+                        push_texture_coordinates(
+                            image_id,
+                            mouse_pos.x + x,
+                            mouse_pos.y + y,
+                            scale,
+                            Color::WHITE,
+                            &mut buf,
+                        );
+                        num_sprites += 1;
+                    }
+                }
             }
             MouseObject::MultiImage(multi_image) => {
                 let (dx, dy) = (multi_image.size_x as i32 / 2, multi_image.size_y as i32 / 2);
@@ -528,7 +572,7 @@ fn main() {
         let mouse_pos = win_to_grid(vi2f(window.mouse_position()), scale);
         let mouse_message = format!("mouse:{},{}", mouse_pos.x + dx, mouse_pos.y + dy);
         let message = format!(
-            "{} sprites\n{} fps ({} ms per frame)\nscale: {}\nZ: {}\n{}\nfog: {}\n{}\n{}\n{}",
+            "{} sprites\n{} fps ({} ms per frame)\nscale: {}\nZ: {}\n{}\nfog: {}\n{}\n{}\n{}\ncursor size: {}",
             num_sprites,
             fps,
             frame_time,
@@ -538,7 +582,8 @@ fn main() {
             fog,
             image_message,
             ore_message,
-            mouse_message
+            mouse_message,
+            cursor_size
         );
         text_object.set_string(&message);
         window.draw_text(&text_object, &rs);
@@ -570,6 +615,41 @@ fn main() {
             current_frames_rendered = 0;
         }
     }
+}
+
+fn cursor_size_decrease(cursor_size: &mut i32) {
+    *cursor_size = match *cursor_size {
+        1 => 1,
+        2 => 1,
+        3 => 2,
+        4 => 3,
+        5 => 4,
+        7 => 5,
+        9 => 7,
+        13 => 9,
+        17 => 13,
+        23 => 17,
+        31 => 23,
+        41 => 31,
+        _ => (*cursor_size * 10 / 12 - 1).max(1),
+    };
+}
+
+fn cursor_size_increase(cursor_size: &mut i32) {
+    *cursor_size = match *cursor_size {
+        1 => 2,
+        2 => 3,
+        3 => 4,
+        4 => 5,
+        5 => 7,
+        7 => 9,
+        9 => 13,
+        13 => 17,
+        17 => 23,
+        23 => 31,
+        31 => 41,
+        _ => *cursor_size * 12 / 10 + 1,
+    };
 }
 
 fn make_matrix(scale: f32) -> (Vec<Object>, i32) {
